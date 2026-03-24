@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dimeta-query"
+version = "0.1.0"
+description = "LLVM Metadata Parser and Query Engine"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "lark",
+    "cxxfilt",
+    "itanium_demangler",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+dev = [
+    "ruff",
+    "mypy",
+    "shiv",
+]
+
+[project.scripts]
+dimeta-query = "dimeta_query.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dimeta_query = ["*.lark"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
