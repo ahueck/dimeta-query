@@ -68,9 +68,11 @@ def setup_sandbox_globals() -> Dict[str, Any]:
 def print_help() -> None:
     print("""
 Available Commands:
-  m [-v] <query>   Evaluate a matcher query
+  m [-v] [-n] <query>
+                   Evaluate a matcher query
                    (e.g., m composite_type(has_name("foo")))
-                   Use -v or --verbose for more detailed tree output.
+                   -v, --verbose: Show more detailed tree output.
+                   -n, --node-only: Print only the matching node, no children.
   drop [-f] !<id>  Safely drop a node and cascade if refs reach 0
                    (e.g., drop !42). Use -f or --force to force drop.
   unparse <file>   Write the current metadata graph to a file
@@ -135,17 +137,32 @@ def main() -> None:
         elif user_input.startswith("m "):
             query_str = user_input[2:].strip()
             verbose = False
+            shallow = False
             
-            # Check for verbose flag
-            if query_str.startswith("-v "):
-                verbose = True
-                query_str = query_str[3:].strip()
-            elif query_str.startswith("--verbose "):
-                verbose = True
-                query_str = query_str[10:].strip()
-            elif query_str == "-v" or query_str == "--verbose":
-                verbose = True
-                query_str = ""
+            # Simple flag parsing loop
+            while True:
+                if query_str.startswith("-v "):
+                    verbose = True
+                    query_str = query_str[3:].strip()
+                elif query_str.startswith("--verbose "):
+                    verbose = True
+                    query_str = query_str[10:].strip()
+                elif query_str == "-v" or query_str == "--verbose":
+                    verbose = True
+                    query_str = ""
+                    break
+                elif query_str.startswith("-n "):
+                    shallow = True
+                    query_str = query_str[3:].strip()
+                elif query_str.startswith("--node-only "):
+                    shallow = True
+                    query_str = query_str[12:].strip()
+                elif query_str == "-n" or query_str == "--node-only":
+                    shallow = True
+                    query_str = ""
+                    break
+                else:
+                    break
 
             try:
                 # Compile and evaluate the matcher statement safely
@@ -163,7 +180,7 @@ def main() -> None:
                 else:
                     for i, res in enumerate(results, 1):
                         print(f"\nMatch {i} at !{res.node.id}:")
-                        print(format_ascii_tree(res, verbose=verbose))
+                        print(format_ascii_tree(res, verbose=verbose, shallow=shallow))
                     print(f"\nTotal matches: {len(results)}")
 
             except (SecurityError, ValueError, NameError) as e:

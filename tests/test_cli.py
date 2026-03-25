@@ -343,3 +343,95 @@ def test_cli_combined_demangle_fuzzy(tmp_path):
                                 match_found = True
                     assert match_found
 
+def test_cli_node_only_flag(tmp_path):
+    input_content = [
+        '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)',
+        '!2 = !{ !3 }',
+        '!3 = !DIBasicType(name: "int", size: 32)'
+    ]
+    input_file = tmp_path / "input.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    # query with -n
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch(
+            "builtins.input", 
+            side_effect=['m -n composite_type(has_name("MyStruct"))', "exit"]
+        ):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                # Collect all printed lines
+                printed_lines = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        printed_lines.append(str(arg))
+                
+                full_output = "\n".join(printed_lines)
+                
+                # Should find the match
+                assert "Match 1 at !1" in full_output
+                # Should show the root node
+                assert '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)' in full_output
+                # Should NOT show the child node !3 or the tree structure
+                assert "└─" not in full_output
+                assert "!3 = !DIBasicType" not in full_output
+
+def test_cli_node_only_long_flag(tmp_path):
+    input_content = [
+        '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)',
+        '!2 = !{ !3 }',
+        '!3 = !DIBasicType(name: "int", size: 32)'
+    ]
+    input_file = tmp_path / "input.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    # query with --node-only
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch(
+            "builtins.input", 
+            side_effect=['m --node-only composite_type(has_name("MyStruct"))', "exit"]
+        ):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                printed_lines = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        printed_lines.append(str(arg))
+                
+                full_output = "\n".join(printed_lines)
+                
+                assert "Match 1 at !1" in full_output
+                assert '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)' in full_output
+                assert "└─" not in full_output
+
+def test_cli_mixed_flags(tmp_path):
+    # Verify that -n and -v can coexist (though -n suppresses the tree, so -v might be redundant for the tree structure, 
+    # but the code shouldn't crash and should respect -n)
+    input_content = [
+        '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)',
+        '!2 = !{ !3 }',
+        '!3 = !DIBasicType(name: "int", size: 32)'
+    ]
+    input_file = tmp_path / "input.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch(
+            "builtins.input", 
+            side_effect=['m -n -v composite_type(has_name("MyStruct"))', "exit"]
+        ):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                printed_lines = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        printed_lines.append(str(arg))
+                
+                full_output = "\n".join(printed_lines)
+                
+                assert "Match 1 at !1" in full_output
+                # Shallow should win over verbose in terms of recursion
+                assert "└─" not in full_output

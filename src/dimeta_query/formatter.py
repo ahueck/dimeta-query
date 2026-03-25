@@ -21,12 +21,14 @@ def _get_edges(node: MDNode) -> List[Tuple[str, MDNode]]:
                     edges.append((f"[{i}]", v))
     return edges
 
-def format_ascii_tree(match_result: MatchResult, verbose: bool = False) -> str:
+def format_ascii_tree(match_result: MatchResult, verbose: bool = False, shallow: bool = False) -> str:
     lines: List[str] = []
     
     def walk(node: MDNode, prefix: str, visited: Set[str]) -> None:
         if not prefix: # Root
             lines.append(node.raw_text or f"!{node.id} = <proxy>")
+            if shallow:
+                return
             child_prefix = " "
         else:
             child_prefix = prefix
