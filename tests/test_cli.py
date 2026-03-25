@@ -435,3 +435,78 @@ def test_cli_mixed_flags(tmp_path):
                 assert "Match 1 at !1" in full_output
                 # Shallow should win over verbose in terms of recursion
                 assert "└─" not in full_output
+
+def test_cli_print_node(tmp_path):
+    input_content = [
+        '!1 = !DIFile(filename: "test.c", directory: "/tmp")',
+        '!2 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !3)',
+        '!3 = !{ !4 }',
+        '!4 = !DIBasicType(name: "int", size: 32)'
+    ]
+    input_file = tmp_path / "input.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    # Test p !2 (deep default)
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch(
+            "builtins.input", 
+            side_effect=['p !2', "exit"]
+        ):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                output = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        output.append(str(arg))
+                full_output = "\n".join(output)
+                
+                assert "Node !2:" in full_output
+                assert "MyStruct" in full_output
+                assert "└─" in full_output
+                
+    # Test p -n !2 (shallow)
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=['p -n !2', "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                output = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        output.append(str(arg))
+                full_output = "\n".join(output)
+                
+                assert "Node !2:" in full_output
+                assert "MyStruct" in full_output
+                assert "└─" not in full_output
+
+    # Test p 2 (numeric ID without !)
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=['p 2', "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                output = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        output.append(str(arg))
+                full_output = "\n".join(output)
+                
+                assert "Node !2:" in full_output
+                assert "MyStruct" in full_output
+
+    # Check for invalid node
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=['p !999', "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                
+                output = []
+                for call_args, _ in mock_print.call_args_list:
+                    for arg in call_args:
+                        output.append(str(arg))
+                full_output = "\n".join(output)
+                
+                assert "Error: Node !999 not found" in full_output
+

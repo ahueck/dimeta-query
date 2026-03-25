@@ -34,7 +34,7 @@ from .matchers import (
     subrange,
 )
 from .modifiers import demangle, fuzzy
-from .query import evaluate_query
+from .query import MatchResult, evaluate_query
 from .repl import SecurityError, execute_safely
 from .unparser import DanglingReferenceError
 
@@ -73,6 +73,9 @@ Available Commands:
                    (e.g., m composite_type(has_name("foo")))
                    -v, --verbose: Show more detailed tree output.
                    -n, --node-only: Print only the matching node, no children.
+  p [-v] [-n] <id> Print a specific metadata node by ID (e.g., p !1, p 42)
+                   -v, --verbose: Show more detailed tree output.
+                   -n, --node-only: Print only the node, no children.
   drop [-f] !<id>  Safely drop a node and cascade if refs reach 0
                    (e.g., drop !42). Use -f or --force to force drop.
   unparse <file>   Write the current metadata graph to a file
@@ -187,6 +190,39 @@ def main() -> None:
                 print(f"Query Error: {e}")
             except Exception as e:
                 print(f"Execution Error: {e}")
+
+        elif user_input.startswith("p "):
+            parts = user_input[2:].strip().split()
+            verbose = False
+            shallow = False
+            target = ""
+            
+            i = 0
+            while i < len(parts):
+                arg = parts[i]
+                if arg in ("-v", "--verbose"):
+                    verbose = True
+                elif arg in ("-n", "--node-only"):
+                    shallow = True
+                else:
+                    target = arg
+                i += 1
+            
+            if not target:
+                print("Error: Must provide a node ID to print.")
+                continue
+
+            # Normalize target
+            if target.startswith("!"):
+                target = target[1:]
+            
+            node = manager.node_map.get(target)
+            if not node:
+                print(f"Error: Node !{target} not found.")
+            else:
+                res = MatchResult(node)
+                print(f"\nNode !{node.id}:")
+                print(format_ascii_tree(res, verbose=verbose, shallow=shallow))
 
         elif user_input.startswith("drop "):
             parts = user_input[5:].split()
