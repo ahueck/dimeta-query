@@ -175,3 +175,26 @@ def test_ir_manager_metadata_ordering(tmp_path):
     assert metadata_lines[2].startswith('!1')
     assert metadata_lines[3].startswith('!2')
 
+def test_ir_manager_numeric_sorting(tmp_path):
+    ll_content = [
+        '!19 = !{!"nineteen"}',
+        '!2 = !{!"two"}',
+        '!20 = !{!"twenty"}',
+        '!200 = !{!"twohundred"}'
+    ]
+    ll_file = tmp_path / "sorting.ll"
+    ll_file.write_text("\n".join(ll_content) + "\n")
+
+    manager = IRManager()
+    manager.parse_file(str(ll_file))
+
+    save_file = tmp_path / "saved_sorting.ll"
+    manager.save_file(str(save_file))
+
+    saved_content = save_file.read_text().splitlines()
+    metadata_lines = [line for line in saved_content if line.startswith('!')]
+    
+    ids = [line.split(' = ')[0] for line in metadata_lines]
+    expected_ids = ['!2', '!19', '!20', '!200']
+    assert ids == expected_ids
+

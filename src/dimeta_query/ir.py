@@ -120,9 +120,9 @@ class IRManager:
 
                 # Write metadata definitions sorted by ID
                 # Numeric IDs (group 1) after named/string IDs (group 0)
-                def _sort_key(x: str) -> Tuple[int, str]:
+                def _sort_key(x: str) -> Tuple[int, object]:
                     if x.isdigit():
-                        return (1, str(int(x)))
+                        return (1, int(x))
                     return (0, x)
 
                 sorted_ids = sorted(self.node_map.keys(), key=_sort_key)
