@@ -370,27 +370,19 @@ def main() -> None:
             print_help()
             continue
 
-        handlers = {
-            "m": _handle_match_command,
-            "p": _handle_print_command,
-            "drop": _handle_drop_command,
-            "sweep": _handle_sweep_command,
-            "unparse": _handle_unparse_command,
-        }
-
-        handler = handlers.get(cmd)
-        if handler is None:
+        if cmd == "m":
+            _handle_match_command(manager, flags, payload, sandbox_globals)
+        elif cmd == "p":
+            _handle_print_command(manager, flags, payload)
+        elif cmd == "drop":
+            _handle_drop_command(manager, flags, payload, sandbox_globals)
+        elif cmd == "sweep":
+            _handle_sweep_command(manager, flags)
+        elif cmd == "unparse":
+            _handle_unparse_command(manager, payload)
+        else:
             print("Unknown command. Type 'help' for options.")
             continue
-
-        if cmd in ("m", "drop"):
-            handler(manager, flags, payload, sandbox_globals)
-        elif cmd == "p":
-            handler(manager, flags, payload)
-        elif cmd == "sweep":
-            handler(manager, flags)
-        else:
-            handler(manager, payload)
 
 if __name__ == "__main__":
     main()
