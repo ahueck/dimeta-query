@@ -550,4 +550,80 @@ def test_cli_print_node(tmp_path):
                 full_output = "\n".join(output)
                 
                 assert "Error: Node !999 not found" in full_output
+                
+
+def test_cli_drop_matcher(tmp_path):
+    input_content = [
+        '!1 = !DIFile(filename: "test.c", directory: "/tmp")',
+        '!2 = !DIBasicType(name: "int", size: 32)'
+    ]
+    input_file = tmp_path / "input_drop_matcher.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    # Matcher: drop all DIBasicType
+    output_file = tmp_path / "output_drop_matcher.ll"
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch(
+            "builtins.input",
+            side_effect=[
+                'drop basic_type(has_name("int"))',
+                f"unparse {output_file}",
+                "exit",
+            ],
+        ):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                assert any(
+                    "Success: Dropped 1 matching nodes (force=False)" in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
+    
+    assert output_file.exists()
+    out_text = output_file.read_text()
+    assert '!2 = !DIBasicType(name: "int", size: 32)' not in out_text
+
+def test_cli_drop_matcher_force(tmp_path):
+    input_content = [
+        '!1 = !DIFile(filename: "test.c", directory: "/tmp")',
+        '!2 = !DICompositeType(tag: DW_TAG_array_type, baseType: !1, size: 64)'
+    ]
+    input_file = tmp_path / "input_drop_matcher_force.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    # Try to drop !1 without force - should fail
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=['drop file_node()', "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                assert any(
+                    "Failed to drop !1: Cannot drop node with active references"
+                    in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
+    
+    # Try to drop with force
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=['drop -f file_node()', "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                assert any(
+                    "Success: Dropped 1 matching nodes (force=True)" in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
+
+def test_cli_drop_matcher_no_match(tmp_path):
+    input_content = [
+        '!1 = !DIFile(filename: "test.c", directory: "/tmp")'
+    ]
+    input_file = tmp_path / "input_no_match.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=['drop basic_type()', "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                assert any(
+                    "0 matches found." in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
 

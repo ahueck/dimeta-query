@@ -1,5 +1,6 @@
+
 from dimeta_query.ir import IRManager
-import os
+
 
 def test_sweep_clean_direct_orphan(tmp_path):
     # !0 is referenced by IR

@@ -136,7 +136,8 @@ class IRManager:
     def find_unreferenced_metadata_ids(self, discard_named: bool = False) -> List[str]:
         """
         Identifies metadata IDs that are not reachable from any IR statement
-        or any named metadata definition (e.g., !llvm.module.flags) when discard_named=False.
+        or any named metadata definition (e.g., !llvm.module.flags) when 
+        discard_named=False.
         By default, all named nodes are treated as roots.
         If discard_named is True, named nodes are not automatically treated as roots.
         """

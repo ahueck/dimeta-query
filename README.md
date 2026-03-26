@@ -92,7 +92,7 @@ Current count: 45 nodes.
 |:--------------------|:-----------------------------------------------------------------------------------|
 | `m <flags> <query>` | Evaluate a matcher query. Returns all nodes in the graph that match the criteria.  |
 | `p <flags> <id>`    | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).                |
-| `drop <id>`         | Safely remove a node. Use `-f` to force removal of referenced nodes.               |
+| `drop <id|query>`   | Safely remove a node or nodes matching a query. Use `-f` to force.                 |
 | `sweep [-a]`        | Remove metadata nodes not reachable from IR. Use `-a` to also discard named nodes. |
 | `unparse <file>`    | Export the current (potentially modified) metadata graph to a `.ll` file.          |
 | `help`              | Show detailed command help.                                                        |

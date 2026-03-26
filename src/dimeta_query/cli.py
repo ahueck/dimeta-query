@@ -81,8 +81,10 @@ Available Commands:
                    -n, --node-only [level]: Limit tree depth (default 0).
                    -s, --summary: Print only node names, no payloads.
                    -l, --list: Print as a flat, deduplicated list.
-  drop [-f] !<id>  Safely drop a node and cascade if refs reach 0
-                   (e.g., drop !42). Use -f or --force to force drop.
+  drop [-f] <id|query>
+                   Safely drop a node by ID or all nodes matching a query
+                   (e.g., drop !42, drop node(has_name("test")))
+                   Use -f or --force to force drop.
   sweep [-a]       Remove all metadata nodes not reachable from IR
                    -a, --all: Also discard unreferenced named metadata.
   unparse <file>   Write the current metadata graph to a file
@@ -139,7 +141,22 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
 
     return cmd, flags, rest.strip()
 
+def is_matcher_expression(payload: str) -> bool:
+    """Heuristic to distinguish between a node ID and a matcher expression."""
+    p = payload.strip()
+    if not p:
+        return False
+    # If it starts with ! and has no parens, it's almost certainly an ID
+    if p.startswith("!") and "(" not in p:
+        return False
+    # If it's purely digits, it's an ID
+    if p.isdigit():
+        return False
+    # If it has parens, we treat it as a matcher expression
+    return "(" in p and ")" in p
+
 def main() -> None:
+
     parser = argparse.ArgumentParser(
         description="dimeta-query: Interactive LLVM Metadata Query Engine"
     )
@@ -266,25 +283,71 @@ def main() -> None:
                 print("Error: Must provide a node ID to drop.")
                 continue
 
-            target = payload[1:] if payload.startswith("!") else payload
+            if is_matcher_expression(payload):
+                try:
+                    # Compile and evaluate the matcher statement safely
+                    matcher = execute_safely(payload, sandbox_globals)
 
-            try:
-                drop_node(target, manager.node_map, force=flags["force"])
-                print(
-                    f"Success: Dropped !{target} (force={flags['force']}) "
-                    "and executed cascade."
-                )
-            except ValueError as e:
-                print(f"Failed to drop !{target}: {e}")
-            except Exception as e:
-                print(f"Error dropping node: {e}")
+                    if not matcher or not hasattr(matcher, 'matches'):
+                        print("Error: Query did not return a valid Matcher object.")
+                        continue
+
+                    # Execute the query and resolve all targets first
+                    results = list(evaluate_query(manager.node_map.values(), matcher))
+
+                    if not results:
+                        print("0 matches found.")
+                    else:
+                        # Deduplicate IDs and resolve them before dropping
+                        target_ids = []
+                        seen_ids = set()
+                        for res in results:
+                            if res.node.id not in seen_ids:
+                                target_ids.append(res.node.id)
+                                seen_ids.add(res.node.id)
+
+                        success_count = 0
+                        for target_id in target_ids:
+                            try:
+                                # Cascade drops can remove subsequent matched nodes
+                                if target_id not in manager.node_map:
+                                    continue
+                                drop_node(
+                                    target_id, manager.node_map, force=flags["force"]
+                                )
+                                success_count += 1
+                            except ValueError as e:
+                                print(f"Failed to drop !{target_id}: {e}")
+
+                        print(
+                            f"Success: Dropped {success_count} matching nodes "
+                            f"(force={flags['force']})."
+                        )
+
+                except (SecurityError, ValueError, NameError) as e:
+                    print(f"Query Error: {e}")
+                except Exception as e:
+                    print(f"Execution Error: {e}")
+
+            else:
+                target = payload[1:] if payload.startswith("!") else payload
+
+                try:
+                    drop_node(target, manager.node_map, force=flags["force"])
+                    print(
+                        f"Success: Dropped !{target} (force={flags['force']}) "
+                        "and executed cascade."
+                    )
+                except ValueError as e:
+                    print(f"Failed to drop !{target}: {e}")
+                except Exception as e:
+                    print(f"Error dropping node: {e}")
 
         elif cmd == "sweep":
             try:
                 count = manager.sweep_unreferenced_metadata(discard_named=flags["all"])
                 print(
-                    f"Success: Swept {count} unreferenced metadata definitions "
-                    f"(discard_named={flags['all']})."
+                    f"Success: Swept {count} unreferenced metadata definitions."
                 )
                 print(f"Current count: {len(manager.node_map)} nodes.")
             except Exception as e:
