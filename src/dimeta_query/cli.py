@@ -83,6 +83,34 @@ Available Commands:
   exit / quit      Exit the REPL
 """.strip() + "\n")
 
+def parse_repl_line(line: str) -> tuple[str, dict[str, bool], str]:
+    """Parses a REPL line into (command, flags, payload)."""
+    parts = line.strip().split(maxsplit=1)
+    if not parts:
+        return "", {}, ""
+
+    cmd = parts[0].lower()
+    rest = parts[1] if len(parts) > 1 else ""
+
+    flags = {"verbose": False, "shallow": False, "force": False}
+    while rest:
+        rest = rest.strip()
+        sub_parts = rest.split(maxsplit=1)
+        word = sub_parts[0]
+
+        if word in ("-v", "--verbose"):
+            flags["verbose"] = True
+        elif word in ("-n", "--node-only"):
+            flags["shallow"] = True
+        elif word in ("-f", "--force"):
+            flags["force"] = True
+        else:
+            break
+
+        rest = sub_parts[1] if len(sub_parts) > 1 else ""
+
+    return cmd, flags, rest.strip()
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="dimeta-query: Interactive LLVM Metadata Query Engine"
@@ -121,69 +149,45 @@ def main() -> None:
     while True:
         try:
             user_input = input("dimeta> ").strip()
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             print("\nExiting.")
             break
-        except KeyboardInterrupt:
-            print("\nExiting.")
-            break
-            
+
         if not user_input:
             continue
 
-        if user_input.lower() in ("exit", "quit"):
+        cmd, flags, payload = parse_repl_line(user_input)
+
+        if cmd in ("exit", "quit"):
             break
-            
-        elif user_input.lower() == "help":
+
+        elif cmd == "help":
             print_help()
-            
-        elif user_input.startswith("m "):
-            query_str = user_input[2:].strip()
-            verbose = False
-            shallow = False
-            
-            # Simple flag parsing loop
-            while True:
-                if query_str.startswith("-v "):
-                    verbose = True
-                    query_str = query_str[3:].strip()
-                elif query_str.startswith("--verbose "):
-                    verbose = True
-                    query_str = query_str[10:].strip()
-                elif query_str == "-v" or query_str == "--verbose":
-                    verbose = True
-                    query_str = ""
-                    break
-                elif query_str.startswith("-n "):
-                    shallow = True
-                    query_str = query_str[3:].strip()
-                elif query_str.startswith("--node-only "):
-                    shallow = True
-                    query_str = query_str[12:].strip()
-                elif query_str == "-n" or query_str == "--node-only":
-                    shallow = True
-                    query_str = ""
-                    break
-                else:
-                    break
+
+        elif cmd == "m":
+            if not payload:
+                print("Error: Must provide a query.")
+                continue
 
             try:
                 # Compile and evaluate the matcher statement safely
-                matcher = execute_safely(query_str, sandbox_globals)
-                
+                matcher = execute_safely(payload, sandbox_globals)
+
                 if not matcher or not hasattr(matcher, 'matches'):
                     print("Error: Query did not return a valid Matcher object.")
                     continue
-                
+
                 # Execute the query
                 results = list(evaluate_query(manager.node_map.values(), matcher))
-                
+
                 if not results:
                     print("0 matches found.")
                 else:
                     for i, res in enumerate(results, 1):
                         print(f"\nMatch {i} at !{res.node.id}:")
-                        print(format_ascii_tree(res, verbose=verbose, shallow=shallow))
+                        print(format_ascii_tree(
+                            res, verbose=flags["verbose"], shallow=flags["shallow"]
+                        ))
                     print(f"\nTotal matches: {len(results)}")
 
             except (SecurityError, ValueError, NameError) as e:
@@ -191,80 +195,55 @@ def main() -> None:
             except Exception as e:
                 print(f"Execution Error: {e}")
 
-        elif user_input.startswith("p "):
-            parts = user_input[2:].strip().split()
-            verbose = False
-            shallow = False
-            target = ""
-            
-            i = 0
-            while i < len(parts):
-                arg = parts[i]
-                if arg in ("-v", "--verbose"):
-                    verbose = True
-                elif arg in ("-n", "--node-only"):
-                    shallow = True
-                else:
-                    target = arg
-                i += 1
-            
-            if not target:
+        elif cmd == "p":
+            if not payload:
                 print("Error: Must provide a node ID to print.")
                 continue
 
             # Normalize target
-            if target.startswith("!"):
-                target = target[1:]
-            
+            target = payload[1:] if payload.startswith("!") else payload
+
             node = manager.node_map.get(target)
             if not node:
                 print(f"Error: Node !{target} not found.")
             else:
                 res = MatchResult(node)
                 print(f"\nNode !{node.id}:")
-                print(format_ascii_tree(res, verbose=verbose, shallow=shallow))
+                print(format_ascii_tree(
+                    res, verbose=flags["verbose"], shallow=flags["shallow"]
+                ))
 
-        elif user_input.startswith("drop "):
-            parts = user_input[5:].split()
-            force = False
-            target = ""
-            for p in parts:
-                if p in ("--force", "-f"):
-                    force = True
-                else:
-                    target = p
-            
-            if not target:
+        elif cmd == "drop":
+            if not payload:
                 print("Error: Must provide a node ID to drop.")
                 continue
 
-            if target.startswith("!"):
-                target = target[1:]
-            
+            target = payload[1:] if payload.startswith("!") else payload
+
             try:
-                drop_node(target, manager.node_map, force=force)
+                drop_node(target, manager.node_map, force=flags["force"])
                 print(
-                    f"Success: Dropped !{target} (force={force}) and executed cascade."
+                    f"Success: Dropped !{target} (force={flags['force']}) "
+                    "and executed cascade."
                 )
             except ValueError as e:
                 print(f"Failed to drop !{target}: {e}")
             except Exception as e:
                 print(f"Error dropping node: {e}")
 
-        elif user_input.startswith("unparse "):
-            filename = user_input[8:].strip()
-            if not filename:
+        elif cmd == "unparse":
+            if not payload:
                 print("Error: Must provide a filename to unparse to.")
                 continue
-                
+
             try:
-                manager.save_file(filename)
-                print(f"Success: Graph safely written to {filename}")
+                manager.save_file(payload)
+                print(f"Success: Graph safely written to {payload}")
             except DanglingReferenceError as e:
                 print(f"Unparse Error: {e}")
             except Exception as e:
                 print(f"Failed to write file: {e}")
-        
+
         else:
             print("Unknown command. Type 'help' for options.")
 
