@@ -132,3 +132,73 @@ class IRManager:
                         f.write(f"{node_obj.raw_text}\n")
         except Exception as e:
             raise RuntimeError(f"Failed to write file: {e}") from e
+
+    def find_unreferenced_metadata_ids(self, discard_named: bool = False) -> List[str]:
+        """
+        Identifies metadata IDs that are not reachable from any IR statement
+        or any named metadata definition (e.g., !llvm.module.flags) when discard_named=False.
+        By default, all named nodes are treated as roots.
+        If discard_named is True, named nodes are not automatically treated as roots.
+        """
+        # 1. Collect roots: IR references AND all named metadata definitions
+        roots = set(self.ir_refs.keys())
+        if not discard_named:
+            for node_id in self.node_map:
+                if not node_id.isdigit():
+                    roots.add(node_id)
+        
+        # 2. Transitive reachability
+        reachable: set[str] = set()
+        stack = list(roots)
+        
+        while stack:
+            node_id = stack.pop()
+            if node_id in reachable:
+                continue
+            
+            reachable.add(node_id)
+            node = self.node_map.get(node_id)
+            if node:
+                try:
+                    for child in node.children():
+                        if child.id not in reachable:
+                            stack.append(child.id)
+                except Exception:
+                    # Proxies or unresolved nodes might fail, but we just 
+                    # care about what we CAN reach.
+                    pass
+
+        # 3. Identify orphans among IDs that have definitions
+        unreferenced = []
+        for node_id, node in self.node_map.items():
+            if node_id not in reachable:
+                # If discard_named=True, include all unreached IDs.
+                # Else, only include numeric IDs.
+                if discard_named or node_id.isdigit():
+                    # Only consider it "removable" if it has a definition 
+                    # (not just a proxy)
+                    if node.raw_text:
+                        unreferenced.append(node_id)
+        
+        # Sort key: named nodes (-1, name) before numeric nodes (1, int)
+        def _sweep_sort_key(x: str) -> Tuple[int, object]:
+            if x.isdigit():
+                return (1, int(x))
+            return (-1, x)
+
+        return sorted(unreferenced, key=_sweep_sort_key)
+
+    def sweep_unreferenced_metadata(self, discard_named: bool = False) -> int:
+        """
+        Removes unreferenced metadata nodes from the graph.
+        Returns the number of nodes removed.
+        """
+        to_remove = self.find_unreferenced_metadata_ids(discard_named=discard_named)
+        for node_id in to_remove:
+            del self.node_map[node_id]
+        
+        # Update metadata count and re-validate unresolved proxies
+        self.metadata_count = sum(1 for n in self.node_map.values() if n.raw_text)
+        self.unresolved = validate_graph(self.node_map)
+        
+        return len(to_remove)

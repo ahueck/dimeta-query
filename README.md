@@ -77,16 +77,26 @@ Node !18:
 └─ elements: !19 = !{!20, !21, ...}
 ```
 
+#### 5. Clean Metadata
+Remove metadata nodes that are no longer reachable from any IR statement or named metadata.
+
+```bash
+dimeta> sweep
+Success: Swept 12 unreferenced metadata definitions.
+Current count: 45 nodes.
+```
+
 ### Available Commands
 
-| Command             | Description                                                                       |
-|:--------------------|:----------------------------------------------------------------------------------|
-| `m <flags> <query>` | Evaluate a matcher query. Returns all nodes in the graph that match the criteria. |
-| `p <flags> <id>`    | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).               |
-| `drop <id>`         | Safely remove a node. Use `-f` to force removal of referenced nodes.              |
-| `unparse <file>`    | Export the current (potentially modified) metadata graph to a `.ll` file.         |
-| `help`              | Show detailed command help.                                                       |
-| `exit`              | Exit the REPL.                                                                    |
+| Command             | Description                                                                        |
+|:--------------------|:-----------------------------------------------------------------------------------|
+| `m <flags> <query>` | Evaluate a matcher query. Returns all nodes in the graph that match the criteria.  |
+| `p <flags> <id>`    | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).                |
+| `drop <id>`         | Safely remove a node. Use `-f` to force removal of referenced nodes.               |
+| `sweep [-a]`        | Remove metadata nodes not reachable from IR. Use `-a` to also discard named nodes. |
+| `unparse <file>`    | Export the current (potentially modified) metadata graph to a `.ll` file.          |
+| `help`              | Show detailed command help.                                                        |
+| `exit`              | Exit the REPL.                                                                     |
 
 #### Output Formatting Flags (for `m` and `p`)
 

@@ -83,6 +83,8 @@ Available Commands:
                    -l, --list: Print as a flat, deduplicated list.
   drop [-f] !<id>  Safely drop a node and cascade if refs reach 0
                    (e.g., drop !42). Use -f or --force to force drop.
+  sweep [-a]       Remove all metadata nodes not reachable from IR
+                   -a, --all: Also discard unreferenced named metadata.
   unparse <file>   Write the current metadata graph to a file
   help             Show this help message
   exit / quit      Exit the REPL
@@ -102,7 +104,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
         "depth": -1, 
         "force": False, 
         "summary": False,
-        "flat": False
+        "flat": False,
+        "all": False
     }
     while rest:
         rest = rest.strip()
@@ -111,6 +114,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
 
         if word in ("-v", "--verbose"):
             flags["verbose"] = True
+        elif word in ("-a", "--all"):
+            flags["all"] = True
         elif word in ("-n", "--node-only"):
             flags["depth"] = 0
             if len(sub_parts) > 1:
@@ -273,6 +278,18 @@ def main() -> None:
                 print(f"Failed to drop !{target}: {e}")
             except Exception as e:
                 print(f"Error dropping node: {e}")
+
+        elif cmd == "sweep":
+            try:
+                count = manager.sweep_unreferenced_metadata(discard_named=flags["all"])
+                print(
+                    f"Success: Swept {count} unreferenced metadata definitions "
+                    f"(discard_named={flags['all']})."
+                )
+                print(f"Current count: {len(manager.node_map)} nodes.")
+            except Exception as e:
+                print(f"Sweep Error: {e}")
+
 
         elif cmd == "unparse":
             if not payload:

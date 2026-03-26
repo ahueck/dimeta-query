@@ -319,6 +319,36 @@ def test_cli_force_drop(tmp_path):
     # !1 should NOT be there as a definition (it became a proxy)
     assert "!1 = !{!\"referenced\"}" not in output_text
 
+def test_cli_sweep_clean(tmp_path):
+    input_content = [
+        'define void @foo() !dbg !0 {',
+        '  ret void',
+        '}',
+        '!0 = !{!"keep"}',
+        '!1 = !{!"drop"}'
+    ]
+    input_file = tmp_path / "input_sweep.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+    
+    output_file = tmp_path / "output_sweep.ll"
+    
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch(
+            "builtins.input",
+            side_effect=["sweep", f"unparse {output_file}", "exit"],
+        ):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                assert any(
+                    "Success: Swept 1 unreferenced metadata definitions." in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
+                
+    assert output_file.exists()
+    output_text = output_file.read_text()
+    assert '!0 = !{!"keep"}' in output_text
+    assert '!1 = !{!"drop"}' not in output_text
+
 def test_cli_combined_demangle_fuzzy(tmp_path):
     input_content = [
         '!1 = !DISubprogram(name: "_Z3fooi")'
