@@ -117,6 +117,21 @@ Success: Swept 12 unreferenced metadata definitions.
 Current count: 45 nodes.
 ```
 
+#### 6. Batch Dropping with Matchers
+The `drop` command also accepts matcher statements. This allows you to remove all nodes matching a specific query in one operation.
+
+```bash
+dimeta> drop subprogram(has_name(fuzzy("^test_.*")))
+Success: Dropped 5 matching nodes (force=False).
+```
+
+Use the `-f` flag to force the removal of nodes that still have active references (they will be reverted to proxy nodes).
+
+```bash
+dimeta> drop -f composite_type(has_name("InternalState"))
+Success: Dropped 1 matching nodes (force=True).
+```
+
 ### Query Matchers and Modifiers
 
 *   **Node Types**: `node()`, `local_variable()`, `composite_type()`, `derived_type()`, `basic_type()`, `subprogram()`, `file_node()`, etc.
