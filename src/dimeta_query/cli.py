@@ -7,7 +7,7 @@ if importlib.util.find_spec("readline"):
     import readline  # noqa: F401  # Enables arrow keys history and better input in the REPL
 from typing import Any, Dict
 
-from .formatter import format_ascii_tree
+from .formatter import format_ascii_tree, format_flat_list
 from .graph_manager import drop_node
 from .ir import IRManager
 
@@ -68,17 +68,19 @@ def setup_sandbox_globals() -> Dict[str, Any]:
 def print_help() -> None:
     print("""
 Available Commands:
-  m [-v] [-n [level]] [-s] <query>
+  m [-v] [-n [level]] [-s] [-l] <query>
                    Evaluate a matcher query
                    (e.g., m composite_type(has_name("foo")))
                    -v, --verbose: Show more detailed tree output.
                    -n, --node-only [level]: Limit tree depth (default 0).
                    -s, --summary: Print only node names, no payloads.
-  p [-v] [-n [level]] [-s] <id>
+                   -l, --list: Print as a flat, deduplicated list.
+  p [-v] [-n [level]] [-s] [-l] <id>
                    Print a specific metadata node by ID (e.g., p !1, p 42)
                    -v, --verbose: Show more detailed tree output.
                    -n, --node-only [level]: Limit tree depth (default 0).
                    -s, --summary: Print only node names, no payloads.
+                   -l, --list: Print as a flat, deduplicated list.
   drop [-f] !<id>  Safely drop a node and cascade if refs reach 0
                    (e.g., drop !42). Use -f or --force to force drop.
   unparse <file>   Write the current metadata graph to a file
@@ -95,7 +97,13 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
     cmd = parts[0].lower()
     rest = parts[1] if len(parts) > 1 else ""
 
-    flags = {"verbose": False, "depth": -1, "force": False, "summary": False}
+    flags = {
+        "verbose": False, 
+        "depth": -1, 
+        "force": False, 
+        "summary": False,
+        "flat": False
+    }
     while rest:
         rest = rest.strip()
         sub_parts = rest.split(maxsplit=1)
@@ -115,6 +123,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
                     continue
         elif word in ("-s", "--summary"):
             flags["summary"] = True
+        elif word in ("-l", "--list"):
+            flags["flat"] = True
         elif word in ("-f", "--force"):
             flags["force"] = True
         else:
@@ -198,12 +208,19 @@ def main() -> None:
                 else:
                     for i, res in enumerate(results, 1):
                         print(f"\nMatch {i} at !{res.node.id}:")
-                        print(format_ascii_tree(
-                            res, 
-                            verbose=flags["verbose"], 
-                            depth=flags["depth"],
-                            name_only=flags["summary"]
-                        ))
+                        if flags["flat"]:
+                            print(format_flat_list(
+                                res,
+                                depth=flags["depth"],
+                                name_only=flags["summary"]
+                            ))
+                        else:
+                            print(format_ascii_tree(
+                                res, 
+                                verbose=flags["verbose"], 
+                                depth=flags["depth"],
+                                name_only=flags["summary"]
+                            ))
                     print(f"\nTotal matches: {len(results)}")
 
             except (SecurityError, ValueError, NameError) as e:
@@ -225,12 +242,19 @@ def main() -> None:
             else:
                 res = MatchResult(node)
                 print(f"\nNode !{node.id}:")
-                print(format_ascii_tree(
-                    res, 
-                    verbose=flags["verbose"], 
-                    depth=flags["depth"],
-                    name_only=flags["summary"]
-                ))
+                if flags["flat"]:
+                    print(format_flat_list(
+                        res,
+                        depth=flags["depth"],
+                        name_only=flags["summary"]
+                    ))
+                else:
+                    print(format_ascii_tree(
+                        res, 
+                        verbose=flags["verbose"], 
+                        depth=flags["depth"],
+                        name_only=flags["summary"]
+                    ))
 
         elif cmd == "drop":
             if not payload:
