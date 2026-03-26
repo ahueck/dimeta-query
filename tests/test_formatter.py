@@ -89,3 +89,21 @@ def test_formatter_verbose_output():
     expected_verbose = """!1 = !DW_TAG_1(name: "n1", child: !2)
  └─ child: !2 = !DW_TAG_2(name: "n2")"""
     assert output_verbose == expected_verbose
+
+def test_formatter_shallow_output():
+    n1 = MDNode("1")
+    n2 = MDNode("2")
+    
+    n1._target = MDSpecializedNode("DW_TAG_1", {"name": "n1", "child": n2})
+    n1.raw_text = '!1 = !DW_TAG_1(name: "n1", child: !2)'
+    
+    n2._target = MDSpecializedNode("DW_TAG_2", {"name": "n2"})
+    n2.raw_text = '!2 = !DW_TAG_2(name: "n2")'
+    
+    match_result = MatchResult(n1)
+    
+    # Test shallow
+    output_shallow = format_ascii_tree(match_result, depth=0)
+    expected_shallow = '!1 = !DW_TAG_1(name: "n1", child: !2)'
+    assert output_shallow == expected_shallow
+

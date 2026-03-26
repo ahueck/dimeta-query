@@ -1,4 +1,5 @@
 import glob
+import os
 from importlib import resources
 
 import pytest
@@ -30,10 +31,9 @@ def test_example_inputs(parser, filepath):
         except Exception as e:
             pytest.fail(f"Failed to parse line '{line}' in file {filepath}: {e}")
 
-# Optional test for custom inputs in 'test-input' directory
-custom_inputs = glob.glob('test-input/*.ll')
+test_dir = os.path.dirname(os.path.abspath(__file__))
+custom_inputs = glob.glob(os.path.join(test_dir, 'test-input', '*.ll'))
 if not custom_inputs:
-    # If no files found, add a dummy skipped parameter to avoid collection errors
     custom_inputs = [
         pytest.param(
             "dummy",

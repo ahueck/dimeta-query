@@ -21,12 +21,37 @@ def _get_edges(node: MDNode) -> List[Tuple[str, MDNode]]:
                     edges.append((f"[{i}]", v))
     return edges
 
-def format_ascii_tree(match_result: MatchResult, verbose: bool = False) -> str:
+def get_node_text(node: MDNode, name_only: bool = False) -> str:
+    if not name_only:
+        return node.raw_text or f"!{node.id} = <proxy>"
+    
+    # Simple/Summary mode: "!id = [distinct] !Tag"
+    prefix = f"!{node.id} = "
+    if node.is_distinct:
+        prefix += "distinct "
+        
+    if node._target is None:
+        return f"{prefix}<proxy>"
+    
+    if isinstance(node._target, MDSpecializedNode):
+        return f"{prefix}{node._target.dwarf_tag}"
+    elif hasattr(node._target, 'elements'): # MDGenericTuple
+        return f"{prefix}!{{" + ("..." if node._target.elements else "") + "}"
+    return f"{prefix}<unknown>"
+
+def format_ascii_tree(
+    match_result: MatchResult, 
+    verbose: bool = False, 
+    depth: int = -1, 
+    name_only: bool = False
+) -> str:
     lines: List[str] = []
     
-    def walk(node: MDNode, prefix: str, visited: Set[str]) -> None:
+    def walk(node: MDNode, prefix: str, visited: Set[str], current_depth: int) -> None:
         if not prefix: # Root
-            lines.append(node.raw_text or f"!{node.id} = <proxy>")
+            lines.append(get_node_text(node, name_only=name_only))
+            if depth >= 0 and current_depth >= depth:
+                return
             child_prefix = " "
         else:
             child_prefix = prefix
@@ -52,12 +77,38 @@ def format_ascii_tree(match_result: MatchResult, verbose: bool = False) -> str:
                     f"{child_prefix}{edge_prefix_char}{label}"
                     f"<cycle to !{child.id}{tag_str}>"
                 )
-            else:
-                node_text = child.raw_text or f"!{child.id} = <proxy>"
+            elif depth < 0 or current_depth + 1 <= depth:
+                node_text = get_node_text(child, name_only=name_only)
                 lines.append(f"{child_prefix}{edge_prefix_char}{label}{node_text}")
                 
                 next_prefix = child_prefix + ("    " if is_last_edge else "│   ")
-                walk(child, next_prefix, new_visited)
+                walk(child, next_prefix, new_visited, current_depth + 1)
 
-    walk(match_result.node, "", set())
+    walk(match_result.node, "", set(), 0)
+    return "\n".join(lines)
+
+def format_flat_list(
+    match_result: MatchResult,
+    depth: int = -1,
+    name_only: bool = False
+) -> str:
+    """Returns a flat, deduplicated list of node texts in the subgraph."""
+    lines: List[str] = []
+    visited: Set[str] = set()
+
+    def walk(node: MDNode, current_depth: int) -> None:
+        if node.id in visited:
+            return
+        
+        visited.add(node.id)
+        lines.append(get_node_text(node, name_only=name_only))
+
+        if depth >= 0 and current_depth >= depth:
+            return
+            
+        edges = _get_edges(node)
+        for _, child in edges:
+            walk(child, current_depth + 1)
+
+    walk(match_result.node, 0)
     return "\n".join(lines)
