@@ -23,6 +23,29 @@ options:
 ```
 
 ### Interactive Session Examples
+### Available Commands
+
+| Command              | Description                                                                        |
+|:---------------------|:-----------------------------------------------------------------------------------|
+| `m <flags> <query>`  | Evaluate a matcher query. Returns all nodes in the graph that match the criteria.  |
+| `p <flags> <id>`     | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).                |
+| `drop <id or query>` | Safely remove a node or nodes matching a query. Use `-f` to force.                 |
+| `sweep [-a]`         | Remove metadata nodes not reachable from IR. Use `-a` to also discard named nodes. |
+| `unparse <file>`     | Export the current (potentially modified) metadata graph to a `.ll` file.          |
+| `help`               | Show detailed command help.                                                        |
+| `exit`               | Exit the REPL.                                                                     |
+
+#### Output Formatting Flags (for `m` and `p`)
+
+Both the match (`m`) and print (`p`) commands support flags to control how the resulting metadata tree is displayed:
+
+*   **`-v`, `--verbose`**: Includes property names in the tree visualization (e.g., `scope: !10` instead of just `!10`).
+*   **`-n`, `--node-only [depth]`**: Limits the depth of the tree traversal.
+    *   `m -n composite_type(...)`: Shows only the matching nodes (depth 0).
+    *   `m -n 1 ...`: Shows matching nodes and their immediate children.
+*   **`-s`, `--summary`**: Concise output showing only the node ID and its DWARF tag or type, omitting the full attribute payload.
+*   **`-l`, `--list`**: Displays the results as a flat, deduplicated list of nodes instead of a hierarchical tree.
+
 
 #### 1. Finding a specific type by name
 Use the `m` (match) command with the `composite_type` and `has_name` matchers.
@@ -39,6 +62,14 @@ Match 1 at !18:
     ├─ [1]: !21 = !DIDerivedType(tag: DW_TAG_member, name: "chunk_x_min", baseType: !11, size: 32, align: 32, offset: 32)
 ...
 Total matches: 1
+```
+
+**Example: Summary List of matches**
+```bash
+dimeta> m -s -l local_variable()
+!150 = DILocalVariable
+!152 = DILocalVariable
+!160 = DILocalVariable
 ```
 
 #### 2. Using Fuzzy Matching
@@ -84,37 +115,6 @@ Remove metadata nodes that are no longer reachable from any IR statement or name
 dimeta> sweep
 Success: Swept 12 unreferenced metadata definitions.
 Current count: 45 nodes.
-```
-
-### Available Commands
-
-| Command             | Description                                                                        |
-|:--------------------|:-----------------------------------------------------------------------------------|
-| `m <flags> <query>` | Evaluate a matcher query. Returns all nodes in the graph that match the criteria.  |
-| `p <flags> <id>`    | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).                |
-| `drop <id|query>`   | Safely remove a node or nodes matching a query. Use `-f` to force.                 |
-| `sweep [-a]`        | Remove metadata nodes not reachable from IR. Use `-a` to also discard named nodes. |
-| `unparse <file>`    | Export the current (potentially modified) metadata graph to a `.ll` file.          |
-| `help`              | Show detailed command help.                                                        |
-| `exit`              | Exit the REPL.                                                                     |
-
-#### Output Formatting Flags (for `m` and `p`)
-
-Both the match (`m`) and print (`p`) commands support flags to control how the resulting metadata tree is displayed:
-
-*   **`-v`, `--verbose`**: Includes property names in the tree visualization (e.g., `scope: !10` instead of just `!10`).
-*   **`-n`, `--node-only [depth]`**: Limits the depth of the tree traversal.
-    *   `m -n composite_type(...)`: Shows only the matching nodes (depth 0).
-    *   `m -n 1 ...`: Shows matching nodes and their immediate children.
-*   **`-s`, `--summary`**: Concise output showing only the node ID and its DWARF tag or type, omitting the full attribute payload.
-*   **`-l`, `--list`**: Displays the results as a flat, deduplicated list of nodes instead of a hierarchical tree.
-
-**Example: Summary List of matches**
-```bash
-dimeta> m -s -l local_variable()
-!150 = DILocalVariable
-!152 = DILocalVariable
-!160 = DILocalVariable
 ```
 
 ### Query Matchers and Modifiers

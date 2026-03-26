@@ -155,6 +155,166 @@ def is_matcher_expression(payload: str) -> bool:
     # If it has parens, we treat it as a matcher expression
     return "(" in p and ")" in p
 
+
+def _normalize_node_id(payload: str) -> str:
+    return payload[1:] if payload.startswith("!") else payload
+
+
+def _format_result(res: MatchResult, flags: dict[str, Any]) -> str:
+    if flags["flat"]:
+        return format_flat_list(
+            res,
+            depth=flags["depth"],
+            name_only=flags["summary"],
+        )
+    return format_ascii_tree(
+        res,
+        verbose=flags["verbose"],
+        depth=flags["depth"],
+        name_only=flags["summary"],
+    )
+
+
+def _compile_matcher(payload: str, sandbox_globals: dict[str, Any]) -> Any:
+    matcher = execute_safely(payload, sandbox_globals)
+    if not matcher or not hasattr(matcher, "matches"):
+        raise ValueError("Query did not return a valid Matcher object.")
+    return matcher
+
+
+def _evaluate_matches(manager: IRManager, matcher: Any) -> list[MatchResult]:
+    return list(evaluate_query(manager.node_map.values(), matcher))
+
+
+def _handle_match_command(
+    manager: IRManager,
+    flags: dict[str, Any],
+    payload: str,
+    sandbox_globals: dict[str, Any],
+) -> None:
+    if not payload:
+        print("Error: Must provide a query.")
+        return
+
+    try:
+        matcher = _compile_matcher(payload, sandbox_globals)
+        results = _evaluate_matches(manager, matcher)
+
+        if not results:
+            print("0 matches found.")
+            return
+
+        for i, res in enumerate(results, 1):
+            print(f"\nMatch {i} at !{res.node.id}:")
+            print(_format_result(res, flags))
+        print(f"\nTotal matches: {len(results)}")
+    except (SecurityError, ValueError, NameError) as e:
+        print(f"Query Error: {e}")
+    except Exception as e:
+        print(f"Execution Error: {e}")
+
+
+def _handle_print_command(
+    manager: IRManager,
+    flags: dict[str, Any],
+    payload: str,
+) -> None:
+    if not payload:
+        print("Error: Must provide a node ID to print.")
+        return
+
+    target = _normalize_node_id(payload)
+    node = manager.node_map.get(target)
+    if not node:
+        print(f"Error: Node !{target} not found.")
+        return
+
+    res = MatchResult(node)
+    print(f"\nNode !{node.id}:")
+    print(_format_result(res, flags))
+
+
+def _handle_drop_command(
+    manager: IRManager,
+    flags: dict[str, Any],
+    payload: str,
+    sandbox_globals: dict[str, Any],
+) -> None:
+    if not payload:
+        print("Error: Must provide a node ID to drop.")
+        return
+
+    if is_matcher_expression(payload):
+        try:
+            matcher = _compile_matcher(payload, sandbox_globals)
+            results = _evaluate_matches(manager, matcher)
+
+            if not results:
+                print("0 matches found.")
+                return
+
+            target_ids = []
+            seen_ids = set()
+            for res in results:
+                if res.node.id not in seen_ids:
+                    target_ids.append(res.node.id)
+                    seen_ids.add(res.node.id)
+
+            success_count = 0
+            for target_id in target_ids:
+                try:
+                    if target_id not in manager.node_map:
+                        continue
+                    drop_node(target_id, manager.node_map, force=flags["force"])
+                    success_count += 1
+                except ValueError as e:
+                    print(f"Failed to drop !{target_id}: {e}")
+
+            print(
+                f"Success: Dropped {success_count} matching nodes "
+                f"(force={flags['force']})."
+            )
+        except (SecurityError, ValueError, NameError) as e:
+            print(f"Query Error: {e}")
+        except Exception as e:
+            print(f"Execution Error: {e}")
+        return
+
+    target = _normalize_node_id(payload)
+    try:
+        drop_node(target, manager.node_map, force=flags["force"])
+        print(
+            f"Success: Dropped !{target} (force={flags['force']}) "
+            "and executed cascade."
+        )
+    except ValueError as e:
+        print(f"Failed to drop !{target}: {e}")
+    except Exception as e:
+        print(f"Error dropping node: {e}")
+
+
+def _handle_sweep_command(manager: IRManager, flags: dict[str, Any]) -> None:
+    try:
+        count = manager.sweep_unreferenced_metadata(discard_named=flags["all"])
+        print(f"Success: Swept {count} unreferenced metadata definitions.")
+        print(f"Current count: {len(manager.node_map)} nodes.")
+    except Exception as e:
+        print(f"Sweep Error: {e}")
+
+
+def _handle_unparse_command(manager: IRManager, payload: str) -> None:
+    if not payload:
+        print("Error: Must provide a filename to unparse to.")
+        return
+
+    try:
+        manager.save_file(payload)
+        print(f"Success: Graph safely written to {payload}")
+    except DanglingReferenceError as e:
+        print(f"Unparse Error: {e}")
+    except Exception as e:
+        print(f"Failed to write file: {e}")
+
 def main() -> None:
 
     parser = argparse.ArgumentParser(
@@ -206,169 +366,31 @@ def main() -> None:
         if cmd in ("exit", "quit"):
             break
 
-        elif cmd == "help":
+        if cmd == "help":
             print_help()
+            continue
 
-        elif cmd == "m":
-            if not payload:
-                print("Error: Must provide a query.")
-                continue
+        handlers = {
+            "m": _handle_match_command,
+            "p": _handle_print_command,
+            "drop": _handle_drop_command,
+            "sweep": _handle_sweep_command,
+            "unparse": _handle_unparse_command,
+        }
 
-            try:
-                # Compile and evaluate the matcher statement safely
-                matcher = execute_safely(payload, sandbox_globals)
-
-                if not matcher or not hasattr(matcher, 'matches'):
-                    print("Error: Query did not return a valid Matcher object.")
-                    continue
-
-                # Execute the query
-                results = list(evaluate_query(manager.node_map.values(), matcher))
-
-                if not results:
-                    print("0 matches found.")
-                else:
-                    for i, res in enumerate(results, 1):
-                        print(f"\nMatch {i} at !{res.node.id}:")
-                        if flags["flat"]:
-                            print(format_flat_list(
-                                res,
-                                depth=flags["depth"],
-                                name_only=flags["summary"]
-                            ))
-                        else:
-                            print(format_ascii_tree(
-                                res, 
-                                verbose=flags["verbose"], 
-                                depth=flags["depth"],
-                                name_only=flags["summary"]
-                            ))
-                    print(f"\nTotal matches: {len(results)}")
-
-            except (SecurityError, ValueError, NameError) as e:
-                print(f"Query Error: {e}")
-            except Exception as e:
-                print(f"Execution Error: {e}")
-
-        elif cmd == "p":
-            if not payload:
-                print("Error: Must provide a node ID to print.")
-                continue
-
-            # Normalize target
-            target = payload[1:] if payload.startswith("!") else payload
-
-            node = manager.node_map.get(target)
-            if not node:
-                print(f"Error: Node !{target} not found.")
-            else:
-                res = MatchResult(node)
-                print(f"\nNode !{node.id}:")
-                if flags["flat"]:
-                    print(format_flat_list(
-                        res,
-                        depth=flags["depth"],
-                        name_only=flags["summary"]
-                    ))
-                else:
-                    print(format_ascii_tree(
-                        res, 
-                        verbose=flags["verbose"], 
-                        depth=flags["depth"],
-                        name_only=flags["summary"]
-                    ))
-
-        elif cmd == "drop":
-            if not payload:
-                print("Error: Must provide a node ID to drop.")
-                continue
-
-            if is_matcher_expression(payload):
-                try:
-                    # Compile and evaluate the matcher statement safely
-                    matcher = execute_safely(payload, sandbox_globals)
-
-                    if not matcher or not hasattr(matcher, 'matches'):
-                        print("Error: Query did not return a valid Matcher object.")
-                        continue
-
-                    # Execute the query and resolve all targets first
-                    results = list(evaluate_query(manager.node_map.values(), matcher))
-
-                    if not results:
-                        print("0 matches found.")
-                    else:
-                        # Deduplicate IDs and resolve them before dropping
-                        target_ids = []
-                        seen_ids = set()
-                        for res in results:
-                            if res.node.id not in seen_ids:
-                                target_ids.append(res.node.id)
-                                seen_ids.add(res.node.id)
-
-                        success_count = 0
-                        for target_id in target_ids:
-                            try:
-                                # Cascade drops can remove subsequent matched nodes
-                                if target_id not in manager.node_map:
-                                    continue
-                                drop_node(
-                                    target_id, manager.node_map, force=flags["force"]
-                                )
-                                success_count += 1
-                            except ValueError as e:
-                                print(f"Failed to drop !{target_id}: {e}")
-
-                        print(
-                            f"Success: Dropped {success_count} matching nodes "
-                            f"(force={flags['force']})."
-                        )
-
-                except (SecurityError, ValueError, NameError) as e:
-                    print(f"Query Error: {e}")
-                except Exception as e:
-                    print(f"Execution Error: {e}")
-
-            else:
-                target = payload[1:] if payload.startswith("!") else payload
-
-                try:
-                    drop_node(target, manager.node_map, force=flags["force"])
-                    print(
-                        f"Success: Dropped !{target} (force={flags['force']}) "
-                        "and executed cascade."
-                    )
-                except ValueError as e:
-                    print(f"Failed to drop !{target}: {e}")
-                except Exception as e:
-                    print(f"Error dropping node: {e}")
-
-        elif cmd == "sweep":
-            try:
-                count = manager.sweep_unreferenced_metadata(discard_named=flags["all"])
-                print(
-                    f"Success: Swept {count} unreferenced metadata definitions."
-                )
-                print(f"Current count: {len(manager.node_map)} nodes.")
-            except Exception as e:
-                print(f"Sweep Error: {e}")
-
-
-        elif cmd == "unparse":
-            if not payload:
-                print("Error: Must provide a filename to unparse to.")
-                continue
-
-            try:
-                manager.save_file(payload)
-                print(f"Success: Graph safely written to {payload}")
-            except DanglingReferenceError as e:
-                print(f"Unparse Error: {e}")
-            except Exception as e:
-                print(f"Failed to write file: {e}")
-
-        else:
+        handler = handlers.get(cmd)
+        if handler is None:
             print("Unknown command. Type 'help' for options.")
+            continue
+
+        if cmd in ("m", "drop"):
+            handler(manager, flags, payload, sandbox_globals)
+        elif cmd == "p":
+            handler(manager, flags, payload)
+        elif cmd == "sweep":
+            handler(manager, flags)
+        else:
+            handler(manager, payload)
 
 if __name__ == "__main__":
     main()
