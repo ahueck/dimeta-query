@@ -345,7 +345,8 @@ def test_cli_combined_demangle_fuzzy(tmp_path):
 
 def test_cli_node_only_flag(tmp_path):
     input_content = [
-        '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)',
+        '!1 = !DICompositeType(tag: DW_TAG_structure_type, '
+        'name: "MyStruct", elements: !2)',
         '!2 = !{ !3 }',
         '!3 = !DIBasicType(name: "int", size: 32)'
     ]
@@ -372,14 +373,18 @@ def test_cli_node_only_flag(tmp_path):
                 # Should find the match
                 assert "Match 1 at !1" in full_output
                 # Should show the root node
-                assert '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)' in full_output
+                assert (
+                    '!1 = !DICompositeType(tag: DW_TAG_structure_type, '
+                    'name: "MyStruct", elements: !2)'
+                ) in full_output
                 # Should NOT show the child node !3 or the tree structure
                 assert "└─" not in full_output
                 assert "!3 = !DIBasicType" not in full_output
 
 def test_cli_node_only_long_flag(tmp_path):
     input_content = [
-        '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)',
+        '!1 = !DICompositeType(tag: DW_TAG_structure_type, '
+        'name: "MyStruct", elements: !2)',
         '!2 = !{ !3 }',
         '!3 = !DIBasicType(name: "int", size: 32)'
     ]
@@ -403,14 +408,19 @@ def test_cli_node_only_long_flag(tmp_path):
                 full_output = "\n".join(printed_lines)
                 
                 assert "Match 1 at !1" in full_output
-                assert '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)' in full_output
+                assert (
+                    '!1 = !DICompositeType(tag: DW_TAG_structure_type, '
+                    'name: "MyStruct", elements: !2)'
+                ) in full_output
                 assert "└─" not in full_output
 
 def test_cli_mixed_flags(tmp_path):
-    # Verify that -n and -v can coexist (though -n suppresses the tree, so -v might be redundant for the tree structure, 
-    # but the code shouldn't crash and should respect -n)
+    # Verify that -n and -v can coexist (though -n suppresses the tree, 
+    # so -v might be redundant for the tree structure, but the code 
+    # shouldn't crash and should respect -n)
     input_content = [
-        '!1 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !2)',
+        '!1 = !DICompositeType(tag: DW_TAG_structure_type, '
+        'name: "MyStruct", elements: !2)',
         '!2 = !{ !3 }',
         '!3 = !DIBasicType(name: "int", size: 32)'
     ]
@@ -439,7 +449,8 @@ def test_cli_mixed_flags(tmp_path):
 def test_cli_print_node(tmp_path):
     input_content = [
         '!1 = !DIFile(filename: "test.c", directory: "/tmp")',
-        '!2 = !DICompositeType(tag: DW_TAG_structure_type, name: "MyStruct", elements: !3)',
+        '!2 = !DICompositeType(tag: DW_TAG_structure_type, '
+        'name: "MyStruct", elements: !3)',
         '!3 = !{ !4 }',
         '!4 = !DIBasicType(name: "int", size: 32)'
     ]
