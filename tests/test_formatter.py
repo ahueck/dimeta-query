@@ -103,7 +103,7 @@ def test_formatter_shallow_output():
     match_result = MatchResult(n1)
     
     # Test shallow
-    output_shallow = format_ascii_tree(match_result, shallow=True)
+    output_shallow = format_ascii_tree(match_result, depth=0)
     expected_shallow = '!1 = !DW_TAG_1(name: "n1", child: !2)'
     assert output_shallow == expected_shallow
 

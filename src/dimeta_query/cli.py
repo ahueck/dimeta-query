@@ -68,14 +68,17 @@ def setup_sandbox_globals() -> Dict[str, Any]:
 def print_help() -> None:
     print("""
 Available Commands:
-  m [-v] [-n] <query>
+  m [-v] [-n [level]] [-s] <query>
                    Evaluate a matcher query
                    (e.g., m composite_type(has_name("foo")))
                    -v, --verbose: Show more detailed tree output.
-                   -n, --node-only: Print only the matching node, no children.
-  p [-v] [-n] <id> Print a specific metadata node by ID (e.g., p !1, p 42)
+                   -n, --node-only [level]: Limit tree depth (default 0).
+                   -s, --summary: Print only node names, no payloads.
+  p [-v] [-n [level]] [-s] <id>
+                   Print a specific metadata node by ID (e.g., p !1, p 42)
                    -v, --verbose: Show more detailed tree output.
-                   -n, --node-only: Print only the node, no children.
+                   -n, --node-only [level]: Limit tree depth (default 0).
+                   -s, --summary: Print only node names, no payloads.
   drop [-f] !<id>  Safely drop a node and cascade if refs reach 0
                    (e.g., drop !42). Use -f or --force to force drop.
   unparse <file>   Write the current metadata graph to a file
@@ -83,7 +86,7 @@ Available Commands:
   exit / quit      Exit the REPL
 """.strip() + "\n")
 
-def parse_repl_line(line: str) -> tuple[str, dict[str, bool], str]:
+def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
     """Parses a REPL line into (command, flags, payload)."""
     parts = line.strip().split(maxsplit=1)
     if not parts:
@@ -92,7 +95,7 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, bool], str]:
     cmd = parts[0].lower()
     rest = parts[1] if len(parts) > 1 else ""
 
-    flags = {"verbose": False, "shallow": False, "force": False}
+    flags = {"verbose": False, "depth": -1, "force": False, "summary": False}
     while rest:
         rest = rest.strip()
         sub_parts = rest.split(maxsplit=1)
@@ -101,7 +104,17 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, bool], str]:
         if word in ("-v", "--verbose"):
             flags["verbose"] = True
         elif word in ("-n", "--node-only"):
-            flags["shallow"] = True
+            flags["depth"] = 0
+            if len(sub_parts) > 1:
+                peek_parts = sub_parts[1].split(maxsplit=1)
+                # Only consume the digit as depth if it's not the last word.
+                # If it's the last word, assume it's the node ID (payload).
+                if peek_parts[0].isdigit() and len(peek_parts) > 1:
+                    flags["depth"] = int(peek_parts[0])
+                    rest = peek_parts[1]
+                    continue
+        elif word in ("-s", "--summary"):
+            flags["summary"] = True
         elif word in ("-f", "--force"):
             flags["force"] = True
         else:
@@ -186,7 +199,10 @@ def main() -> None:
                     for i, res in enumerate(results, 1):
                         print(f"\nMatch {i} at !{res.node.id}:")
                         print(format_ascii_tree(
-                            res, verbose=flags["verbose"], shallow=flags["shallow"]
+                            res, 
+                            verbose=flags["verbose"], 
+                            depth=flags["depth"],
+                            name_only=flags["summary"]
                         ))
                     print(f"\nTotal matches: {len(results)}")
 
@@ -210,7 +226,10 @@ def main() -> None:
                 res = MatchResult(node)
                 print(f"\nNode !{node.id}:")
                 print(format_ascii_tree(
-                    res, verbose=flags["verbose"], shallow=flags["shallow"]
+                    res, 
+                    verbose=flags["verbose"], 
+                    depth=flags["depth"],
+                    name_only=flags["summary"]
                 ))
 
         elif cmd == "drop":
