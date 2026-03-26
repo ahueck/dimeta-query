@@ -22,25 +22,98 @@ options:
   -h, --help  show this help message and exit
 ```
 
-Example interactive session:
+### Interactive Session Examples
+
+#### 1. Finding a specific type by name
+Use the `m` (match) command with the `composite_type` and `has_name` matchers.
 
 ```bash
-$ dimeta-query example-inputs/test.ll
-Parsing 'example-inputs/test.ll'...
-Loaded 37 nodes from 23 metadata definitions.
-Warning: 14 proxy nodes were referenced but never defined.
-Type 'help' for available commands.
-dimeta> help
+dimeta> m composite_type(has_name("chunk_type"))
 
-Available Commands:
-  m [-v] <query>   Evaluate a matcher query (e.g., m composite_type(has_name("foo")))
-                   Use -v or --verbose for more detailed tree output (shows property names).
-  drop [-f] !<id>  Safely drop a node and cascade if refs reach 0 (e.g., drop !42)
-                   Use -f or --force to force drop even if referenced.
-  unparse <file>   Write the current metadata graph to a file
-  help             Show this help message
-  exit / quit      Exit the REPL
+Match 1 at !18:
+!18 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "chunk_type", scope: !6, file: !1, line: 29, size: 4256, elements: !19)
+└─ elements: !19 = !{!20, !21, !22, !23, !24, !25, !26, !27, !28, !29, !30, !31, !35, !40, !41, !42, !43, !44, !45, !46, !47, !73, !74, !75}
+    ├─ [0]: !20 = !DIDerivedType(tag: DW_TAG_member, name: "task", baseType: !11, size: 32, align: 32)
+    │   ├─ scope: !18 = <cycle to !18 = DICompositeType>
+    │   └─ baseType: !11 = !DIBasicType(name: "integer", size: 32, encoding: DW_ATE_signed)
+    ├─ [1]: !21 = !DIDerivedType(tag: DW_TAG_member, name: "chunk_x_min", baseType: !11, size: 32, align: 32, offset: 32)
+...
+Total matches: 1
 ```
+
+#### 2. Using Fuzzy Matching
+Find all local variables whose name starts with "chunk_".
+
+```bash
+dimeta> m -n local_variable(has_name(fuzzy("^chunk_.*")))
+
+Match 1 at !150:
+!150 = !DILocalVariable(name: "chunk_x", scope: !145, file: !1, line: 102, type: !11)
+
+Match 2 at !152:
+!152 = !DILocalVariable(name: "chunk_y", scope: !145, file: !1, line: 102, type: !11)
+
+Total matches: 2
+```
+
+#### 3. Nested Matchers
+Find composite types that have a member named "task".
+
+```bash
+dimeta> m composite_type(has_element(derived_type(has_name("task"))))
+
+Match 1 at !18:
+!18 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "chunk_type", ...)
+...
+```
+
+#### 4. Printing and Navigation
+Use the `p` (print) command to inspect a node by ID. Use `-n` to limit depth.
+
+```bash
+dimeta> p -n 1 !18
+Node !18:
+!18 = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "chunk_type", scope: !6, file: !1, line: 29, size: 4256, elements: !19)
+└─ elements: !19 = !{!20, !21, ...}
+```
+
+### Available Commands
+
+| Command             | Description                                                                       |
+|:--------------------|:----------------------------------------------------------------------------------|
+| `m <flags> <query>` | Evaluate a matcher query. Returns all nodes in the graph that match the criteria. |
+| `p <flags> <id>`    | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).               |
+| `drop <id>`         | Safely remove a node. Use `-f` to force removal of referenced nodes.              |
+| `unparse <file>`    | Export the current (potentially modified) metadata graph to a `.ll` file.         |
+| `help`              | Show detailed command help.                                                       |
+| `exit`              | Exit the REPL.                                                                    |
+
+#### Output Formatting Flags (for `m` and `p`)
+
+Both the match (`m`) and print (`p`) commands support flags to control how the resulting metadata tree is displayed:
+
+*   **`-v`, `--verbose`**: Includes property names in the tree visualization (e.g., `scope: !10` instead of just `!10`).
+*   **`-n`, `--node-only [depth]`**: Limits the depth of the tree traversal.
+    *   `m -n composite_type(...)`: Shows only the matching nodes (depth 0).
+    *   `m -n 1 ...`: Shows matching nodes and their immediate children.
+*   **`-s`, `--summary`**: Concise output showing only the node ID and its DWARF tag or type, omitting the full attribute payload.
+*   **`-l`, `--list`**: Displays the results as a flat, deduplicated list of nodes instead of a hierarchical tree.
+
+**Example: Summary List of matches**
+```bash
+dimeta> m -s -l local_variable()
+!150 = DILocalVariable
+!152 = DILocalVariable
+!160 = DILocalVariable
+```
+
+### Query Matchers and Modifiers
+
+*   **Node Types**: `node()`, `local_variable()`, `composite_type()`, `derived_type()`, `basic_type()`, `subprogram()`, `file_node()`, etc.
+*   **Property Matchers**: `has_name("foo")`, `has_tag("DW_TAG_...")`, `has_flag("DIFlagArtificial")`, `has_attr("name", "value")`.
+*   **Traversal Matchers**: `has_type()`, `has_scope()`, `has_element()`, `has_base_type()`, `has_child()`.
+*   **String Modifiers**: `fuzzy("regex")`, `demangle("expected_name")`.
+
 
 ## Installation
 
