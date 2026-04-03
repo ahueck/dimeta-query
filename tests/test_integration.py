@@ -45,7 +45,7 @@ if not custom_inputs:
 def test_custom_inputs(parser, filepath):
     if filepath == "dummy":
         return
-        
+
     lines = extract_metadata_lines(filepath)
     for line in lines:
         try:

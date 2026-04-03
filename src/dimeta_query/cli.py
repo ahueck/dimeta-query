@@ -85,8 +85,9 @@ Available Commands:
                    Safely drop a node by ID or all nodes matching a query
                    (e.g., drop !42, drop node(has_name("test")))
                    Use -f or --force to force drop.
-  sweep [-a]       Remove all metadata nodes not reachable from IR
+  sweep [-a] [-r]    Remove all metadata nodes not reachable from IR
                    -a, --all: Also discard unreferenced named metadata.
+                   -r, --reduce: Reduce DIFile paths and remove checksums before sweep.
   unparse <file>   Write the current metadata graph to a file
   help             Show this help message
   exit / quit      Exit the REPL
@@ -107,7 +108,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
         "force": False, 
         "summary": False,
         "flat": False,
-        "all": False
+        "all": False,
+        "reduce": False
     }
     while rest:
         rest = rest.strip()
@@ -118,6 +120,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
             flags["verbose"] = True
         elif word in ("-a", "--all"):
             flags["all"] = True
+        elif word in ("-r", "--reduce"):
+            flags["reduce"] = True
         elif word in ("-n", "--node-only"):
             flags["depth"] = 0
             if len(sub_parts) > 1:
@@ -295,6 +299,10 @@ def _handle_drop_command(
 
 def _handle_sweep_command(manager: IRManager, flags: dict[str, Any]) -> None:
     try:
+        if flags["reduce"]:
+            m_count = manager.reduce_difile_nodes()
+            print(f"Success: Reduced {m_count} DIFile nodes.")
+
         count = manager.sweep_unreferenced_metadata(discard_named=flags["all"])
         print(f"Success: Swept {count} unreferenced metadata definitions.")
         print(f"Current count: {len(manager.node_map)} nodes.")
