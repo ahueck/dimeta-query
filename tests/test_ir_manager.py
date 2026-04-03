@@ -121,7 +121,7 @@ def test_ir_manager_save_file(tmp_path):
     assert '!1 = !{!"first"}' in saved_content
     assert '!2 = !{!"second"}' in saved_content
     assert '!llvm.module.flags = !{!1}' in saved_content
-    
+
     # Check sorting: !llvm (named), then !1, !2 (numeric)
     metadata_lines = [line for line in saved_content if line.startswith('!')]
     assert metadata_lines[0].startswith('!llvm')
@@ -138,7 +138,7 @@ def test_ir_manager_save_dangling(tmp_path):
 
     manager = IRManager()
     manager.parse_file(str(ll_file))
-    
+
     # Manually remove !2 from node_map to simulate it being dropped
     # Actually validate_graph doesn't remove it, it just marks it as unresolved
     # Unparser.validate raises DanglingReferenceError if child.id not in node_map
@@ -193,7 +193,7 @@ def test_ir_manager_numeric_sorting(tmp_path):
 
     saved_content = save_file.read_text().splitlines()
     metadata_lines = [line for line in saved_content if line.startswith('!')]
-    
+
     ids = [line.split(' = ')[0] for line in metadata_lines]
     expected_ids = ['!2', '!19', '!20', '!200']
     assert ids == expected_ids

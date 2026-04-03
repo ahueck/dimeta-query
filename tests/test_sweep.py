@@ -163,10 +163,10 @@ def test_sweep_default_keeps_named(tmp_path):
 """
     f = tmp_path / "test.ll"
     f.write_text(content)
-    
+
     manager = IRManager()
     manager.parse_file(str(f))
-    
+
     # Default sweep: !llvm.module.flags is a root, !0 is reachable. !1 is orphan.
     count = manager.sweep_unreferenced_metadata(discard_named=False)
     assert count == 1
@@ -181,10 +181,10 @@ def test_sweep_all_discards_named(tmp_path):
 """
     f = tmp_path / "test.ll"
     f.write_text(content)
-    
+
     manager = IRManager()
     manager.parse_file(str(f))
-    
+
     # sweep -a: !llvm.module.flags is NOT a root if not in IR.
     # IR is empty, so everything is unreferenced.
     count = manager.sweep_unreferenced_metadata(discard_named=True)
@@ -212,13 +212,13 @@ define void @foo() !dbg !1 {
 """
     f = tmp_path / "test.ll"
     f.write_text(content)
-    
+
     manager = IRManager()
     manager.parse_file(str(f))
-    
+
     # !1 is referenced in IR. !2 is reachable from !1.
     # !llvm.module.flags is NOT referenced in IR. !0 is reachable only from it.
-    
+
     count = manager.sweep_unreferenced_metadata(discard_named=True)
     # Should remove !llvm.module.flags and !0.
     assert "1" in manager.node_map
