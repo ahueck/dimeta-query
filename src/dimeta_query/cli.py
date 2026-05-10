@@ -1,11 +1,14 @@
 import argparse
 import importlib.util
 import os
+import shlex
+import subprocess
 import sys
+import tempfile
 
 if importlib.util.find_spec("readline"):
     import readline  # noqa: F401  # Enables arrow keys history and better input in the REPL
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .formatter import format_ascii_tree, format_flat_list
 from .graph_manager import drop_node
@@ -85,9 +88,13 @@ Available Commands:
                    Safely drop a node by ID or all nodes matching a query
                    (e.g., drop !42, drop node(has_name("test")))
                    Use -f or --force to force drop.
-  sweep [-a]       Remove all metadata nodes not reachable from IR
+  sweep [-a] [-r]    Remove all metadata nodes not reachable from IR
                    -a, --all: Also discard unreferenced named metadata.
-  unparse <file>   Write the current metadata graph to a file
+                   -r, --reduce: Reduce DIFile paths and remove checksums before sweep.
+  unparse [-o] [file] Write the current metadata graph to a file
+                   -o, --overwrite: Overwrite the original opened file.
+  diff [viewer ...] Compare original file vs current in-memory state
+                   Default viewer: meld
   help             Show this help message
   exit / quit      Exit the REPL
 """.strip() + "\n")
@@ -107,7 +114,9 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
         "force": False, 
         "summary": False,
         "flat": False,
-        "all": False
+        "all": False,
+        "reduce": False,
+        "overwrite": False
     }
     while rest:
         rest = rest.strip()
@@ -118,6 +127,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
             flags["verbose"] = True
         elif word in ("-a", "--all"):
             flags["all"] = True
+        elif word in ("-r", "--reduce"):
+            flags["reduce"] = True
         elif word in ("-n", "--node-only"):
             flags["depth"] = 0
             if len(sub_parts) > 1:
@@ -134,6 +145,8 @@ def parse_repl_line(line: str) -> tuple[str, dict[str, Any], str]:
             flags["flat"] = True
         elif word in ("-f", "--force"):
             flags["force"] = True
+        elif word in ("-o", "--overwrite"):
+            flags["overwrite"] = True
         else:
             break
 
@@ -295,6 +308,10 @@ def _handle_drop_command(
 
 def _handle_sweep_command(manager: IRManager, flags: dict[str, Any]) -> None:
     try:
+        if flags["reduce"]:
+            m_count = manager.reduce_difile_nodes()
+            print(f"Success: Reduced {m_count} DIFile nodes.")
+
         count = manager.sweep_unreferenced_metadata(discard_named=flags["all"])
         print(f"Success: Swept {count} unreferenced metadata definitions.")
         print(f"Current count: {len(manager.node_map)} nodes.")
@@ -302,18 +319,69 @@ def _handle_sweep_command(manager: IRManager, flags: dict[str, Any]) -> None:
         print(f"Sweep Error: {e}")
 
 
-def _handle_unparse_command(manager: IRManager, payload: str) -> None:
-    if not payload:
-        print("Error: Must provide a filename to unparse to.")
+def _handle_unparse_command(
+    manager: IRManager, 
+    flags: dict[str, Any], 
+    payload: str, 
+    opened_file: str
+) -> None:
+    target = payload
+    if flags["overwrite"]:
+        if payload:
+            print("Error: Cannot provide a filename when using --overwrite.")
+            return
+        target = opened_file
+
+    if not target:
+        print("Error: Must provide a filename or use --overwrite.")
         return
 
     try:
-        manager.save_file(payload)
-        print(f"Success: Graph safely written to {payload}")
+        manager.save_file(target)
+        print(f"Success: Graph safely written to {target}")
     except DanglingReferenceError as e:
         print(f"Unparse Error: {e}")
     except Exception as e:
         print(f"Failed to write file: {e}")
+
+
+def _handle_diff_command(
+    manager: IRManager,
+    payload: str,
+    opened_file: str,
+) -> None:
+    viewer_cmd = shlex.split(payload) if payload else ["meld"]
+    if not viewer_cmd:
+        viewer_cmd = ["meld"]
+
+    opened_basename = os.path.basename(opened_file)
+    opened_stem, _ = os.path.splitext(opened_basename)
+    tmp_file: Optional[str] = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            delete=False,
+            prefix=f"dimeta-query-tmp-{opened_stem}-",
+            suffix=".ll",
+            dir=tempfile.gettempdir(),
+        ) as tmp:
+            tmp_file = tmp.name
+
+        manager.save_file(tmp_file)
+        subprocess.run(viewer_cmd + [opened_file, tmp_file], check=False)
+    except DanglingReferenceError as e:
+        print(f"Diff Error: {e}")
+    except FileNotFoundError:
+        print(f"Diff Error: Viewer '{viewer_cmd[0]}' not found.")
+    except Exception as e:
+        print(f"Diff Error: {e}")
+    finally:
+        if tmp_file and os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except OSError:
+                pass
 
 def main() -> None:
 
@@ -379,7 +447,9 @@ def main() -> None:
         elif cmd == "sweep":
             _handle_sweep_command(manager, flags)
         elif cmd == "unparse":
-            _handle_unparse_command(manager, payload)
+            _handle_unparse_command(manager, flags, payload, args.file)
+        elif cmd == "diff":
+            _handle_diff_command(manager, payload, args.file)
         else:
             print("Unknown command. Type 'help' for options.")
             continue

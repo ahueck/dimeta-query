@@ -12,11 +12,11 @@ def test_repl_sandbox_allows_whitelisted_calls():
         "has_identifier": mock_matcher,
         "demangle": mock_matcher,
     }
-    
+
     user_input = 'composite_type(has_identifier(demangle("foo")))'
-    
+
     result = execute_safely(user_input, globals_dict)
-    
+
     assert result == "matched_matched_matched_foo"
 
 def test_repl_sandbox_rejects_unauthorized_ast_nodes():

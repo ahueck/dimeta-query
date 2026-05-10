@@ -19,10 +19,10 @@ from dimeta_query import (
 def test_has_property_matcher():
     n1 = MDNode("1")
     n1._target = MDSpecializedNode("DILocalVariable", {"name": "foo", "arg": 0})
-    
+
     n2 = MDNode("2")
     n2._target = MDSpecializedNode("DICompositeType", {"name": "bar"})
-    
+
     n3 = MDNode("3")
     n3._target = MDGenericTuple([n1])
 
@@ -53,10 +53,10 @@ def test_query_engine_evaluates_node_matchers():
         "DILocalVariable",
         {"name": "foo", "flags": "DIFlagArtificial | DIFlagPrototyped"},
     )
-    
+
     n2 = MDNode("2")
     n2._target = MDSpecializedNode("DICompositeType", {"name": "bar"})
-    
+
     n3 = MDNode("3")
     n3._target = MDSpecializedNode("DILocalVariable", {"name": "baz", "flags": ""})
 
@@ -80,7 +80,7 @@ def test_query_engine_evaluates_node_matchers():
 def test_matcher_supports_fuzzy_and_demangle():
     n1 = MDNode("1")
     n1._target = MDSpecializedNode("DILocalVariable", {"name": "TapeBaseModule<int>"})
-    
+
     n2 = MDNode("2")
     n2._target = MDSpecializedNode("DILocalVariable", {"name": "_Z11take_fieldIPiEvT_"})
 
@@ -100,7 +100,7 @@ def test_matcher_supports_fuzzy_and_demangle():
     res = list(
         evaluate_query([n2], local_variable(has_name(demangle("take_field(int*)"))))
     )
-    # We won't assert len(res) == 1 because the host might not have cxxfilt, 
+    # We won't assert len(res) == 1 because the host might not have cxxfilt,
     # but it shouldn't crash.
 
 def test_query_generator_yields_isolated_match_forks():
@@ -109,46 +109,46 @@ def test_query_generator_yields_isolated_match_forks():
     # !2 = tuple(!3, !4)
     # !3 = variable(name: "A")
     # !4 = variable(name: "B")
-    
+
     n1 = MDNode("1")
     n2 = MDNode("2")
     n3 = MDNode("3")
     n4 = MDNode("4")
-    
+
     n3._target = MDSpecializedNode("DILocalVariable", {"name": "A"})
     n4._target = MDSpecializedNode("DILocalVariable", {"name": "B"})
     n2._target = MDGenericTuple([n3, n4])
     n1._target = MDSpecializedNode("DICompositeType", {"elements": n2})
-    
+
     matcher = composite_type(
         has_element(
             local_variable().bind("var")
         )
     )
-    
+
     res = list(evaluate_query([n1], matcher))
     assert len(res) == 2
-    
+
     # Check that forks have isolated bindings
     bound_nodes = {r.bindings["var"].id for r in res}
     assert bound_nodes == {"3", "4"}
 
 def test_query_engine_uses_dfs_with_deque():
     # Construct a very deep chain: !1 -> !2 -> ... -> !2000
-    # where each has a child. 
+    # where each has a child.
     sys.setrecursionlimit(1000)
-    
+
     nodes = []
     for i in range(1, 1501):
         n = MDNode(str(i))
         nodes.append(n)
-        
+
     for i in range(1499):
         # type property links to next node
         nodes[i]._target = MDSpecializedNode("DILocalVariable", {"type": nodes[i+1]})
-        
+
     nodes[1499]._target = MDSpecializedNode("DILocalVariable", {"name": "target"})
-    
+
     matcher = local_variable(has_name("target"))
 
     res = list(evaluate_query([nodes[0]], matcher))

@@ -25,15 +25,16 @@ options:
 ### Interactive Session Examples
 ### Available Commands
 
-| Command              | Description                                                                        |
-|:---------------------|:-----------------------------------------------------------------------------------|
-| `m <flags> <query>`  | Evaluate a matcher query. Returns all nodes in the graph that match the criteria.  |
-| `p <flags> <id>`     | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).                |
-| `drop <id or query>` | Safely remove a node or nodes matching a query. Use `-f` to force.                 |
-| `sweep [-a]`         | Remove metadata nodes not reachable from IR. Use `-a` to also discard named nodes. |
-| `unparse <file>`     | Export the current (potentially modified) metadata graph to a `.ll` file.          |
-| `help`               | Show detailed command help.                                                        |
-| `exit`               | Exit the REPL.                                                                     |
+| Command               | Description                                                                         |
+|:----------------------|:------------------------------------------------------------------------------------|
+| `m <flags> <query>`   | Evaluate a matcher query. Returns all nodes in the graph that match the criteria.   |
+| `p <flags> <id>`      | Print a specific node by its metadata ID (e.g., `p !42` or `p 42`).                 |
+| `drop <id or query>`  | Safely remove a node or nodes matching a query. Use `-f` to force.                  |
+| `sweep [-a] [-r]`     | Remove unreferenced metadata. `-a`: discard named nodes. `-r`: reduce DIFile paths. |
+| `unparse [-o] [file]` | Export the current graph to a `.ll` file, or use `-o` to overwrite the opened file. |
+| `diff [viewer ...]`   | Open a diff between the opened file and current state (default viewer: `meld`).     |
+| `help`                | Show detailed command help.                                                         |
+| `exit`                | Exit the REPL.                                                                      |
 
 #### Output Formatting Flags (for `m` and `p`)
 

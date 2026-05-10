@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 from .model import MDNode
 from .parser import MetadataParseError, parse_metadata, validate_graph
+from .reducers import reduce_difile_nodes
 from .unparser import Unparser
 
 # 1. Matches ANY attachment pattern: "!name !id"
@@ -203,3 +204,10 @@ class IRManager:
         self.unresolved = validate_graph(self.node_map)
         
         return len(to_remove)
+
+    def reduce_difile_nodes(self) -> int:
+        """
+        Reduces path lengths in DIFile nodes and removes checksums.
+        Returns the number of nodes modified.
+        """
+        return reduce_difile_nodes(self.node_map)

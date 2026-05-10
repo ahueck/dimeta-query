@@ -32,10 +32,10 @@ def test_unresolved_proxy_raises_error():
 def test_generic_tuple_children():
     node2 = MDNode("2")
     node2._target = MDGenericTuple([])
-    
+
     node1 = MDNode("1")
     node1._target = MDGenericTuple([node2, "not a node"])
-    
+
     children = node1.children()
     assert len(children) == 1
     assert children[0] is node2
@@ -43,12 +43,12 @@ def test_generic_tuple_children():
 def test_specialized_node_children():
     node2 = MDNode("2")
     node2._target = MDGenericTuple([])
-    
+
     node1 = MDNode("1")
     specialized = MDSpecializedNode("DICompileUnit", {})
     specialized._parsed_properties = {"file": node2, "other": "string"}
     node1._target = specialized
-    
+
     children = node1.children()
     assert len(children) == 1
     assert children[0] is node2
@@ -57,13 +57,13 @@ def test_specialized_node_eager_parsing():
     node_map = {}
     line = '!1 = !DICompileUnit(language: DW_LANG_C99, file: !2)'
     node = parse_metadata(line, node_map)
-    
+
     target = node._target
     assert isinstance(target, MDSpecializedNode)
-    
+
     # Access properties
     props = target.properties
-    
+
     # Verify parsing occurred eagerly
     assert target._parsed_properties is not None
     assert props['language'] == 'DW_LANG_C99'
@@ -72,13 +72,13 @@ def test_specialized_node_eager_parsing():
 
 def test_node_distinct_qualifier():
     node_map = {}
-    
+
     # Test distinct
     line_distinct = '!1 = distinct !{!"distinct_node"}'
     node_distinct = parse_metadata(line_distinct, node_map)
     assert node_distinct.id == '1'
     assert node_distinct.is_distinct is True
-    
+
     # Test not distinct
     line_normal = '!2 = !{!"normal_node"}'
     node_normal = parse_metadata(line_normal, node_map)
@@ -87,7 +87,7 @@ def test_node_distinct_qualifier():
 
 def test_node_raw_text_preservation():
     node_map = {}
-    
+
     line = '!1 = !{!"some_data"}'
     node = parse_metadata(line, node_map)
     assert node.raw_text == line
@@ -98,13 +98,13 @@ def test_node_raw_text_preservation():
 
 def test_specialized_node_property_parsing():
     node_map = {}
-    
+
     line = '!1 = !DICompileUnit(language: 12, file: !2)'
     node = parse_metadata(line, node_map)
-    
+
     target = node._target
     assert isinstance(target, MDSpecializedNode)
-    
+
     # Check parsed properties
     assert target.properties == {"language": 12, "file": node_map["2"]}
 

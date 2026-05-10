@@ -14,7 +14,7 @@ def test_named_metadata_id_stripping():
 
 def test_dwarf_tag_interning():
     line1 = '!0 = !DICompileUnit(language: DW_LANG_C99)'
-    line2 = '!1 = !DIFile(tag: DW_LANG_C99)' 
+    line2 = '!1 = !DIFile(tag: DW_LANG_C99)'
 
     node1 = parse_metadata(line1)
     val1 = node1._target.properties['language']
