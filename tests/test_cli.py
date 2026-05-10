@@ -1,3 +1,4 @@
+import os
 from unittest.mock import MagicMock, patch
 
 import dimeta_query.cli as cli
@@ -627,3 +628,110 @@ def test_cli_drop_matcher_no_match(tmp_path):
                     for args, kwargs in mock_print.call_args_list
                 )
 
+
+def test_unparse_overwrite(tmp_path):
+    input_content = [
+        '!0 = !{!"original"}'
+    ]
+    input_file = tmp_path / "to_overwrite.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+
+    # Mock sys.argv to point to input.ll
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        # drop the node, then unparse -o, then exit
+        with patch("builtins.input", side_effect=["drop !0", "unparse -o", "exit"]):
+            with patch("builtins.print"):
+                cli.main()
+
+    # Check if input file was overwritten and is now empty because
+    # the only node was dropped.
+    # Actually, drop !0 will leave IR lines if any, but here there are none.
+    # IRManager.save_file writes ir_lines then metadata.
+    output_text = input_file.read_text().strip()
+    assert output_text == ""
+
+def test_unparse_overwrite_long_flag(tmp_path):
+    input_content = [
+        '!0 = !{!"original"}'
+    ]
+    input_file = tmp_path / "to_overwrite_long.ll"
+    input_file.write_text("\n".join(input_content) + "\n")
+
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=["unparse --overwrite", "exit"]):
+            with patch("builtins.print"):
+                cli.main()
+
+    output_text = input_file.read_text().strip()
+    assert output_text == '!0 = !{!"original"}'
+
+def test_unparse_overwrite_error_with_payload(tmp_path):
+    input_file = tmp_path / "test.ll"
+    input_file.write_text("!0 = !{}\n")
+
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=["unparse -o other.ll", "exit"]):
+            with patch("builtins.print") as mock_print:
+                cli.main()
+                assert any(
+                    (
+                        "Error: Cannot provide a filename when using "
+                        "--overwrite."
+                    ) in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
+
+
+def test_diff_default_viewer(tmp_path):
+    input_file = tmp_path / "input_diff.ll"
+    input_file.write_text('!0 = !{!"x"}\n')
+
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=["diff", "exit"]):
+            with patch("tempfile.gettempdir", return_value=str(tmp_path)):
+                with patch("subprocess.run") as mock_run:
+                    cli.main()
+
+    assert mock_run.call_count == 1
+    cmd = mock_run.call_args.args[0]
+    assert cmd[0] == "meld"
+    assert cmd[1] == str(input_file)
+    assert cmd[2].startswith(str(tmp_path / "dimeta-query-tmp-input_diff-"))
+    assert cmd[2].endswith(".ll")
+    assert not os.path.exists(cmd[2])
+
+
+def test_diff_custom_viewer(tmp_path):
+    input_file = tmp_path / "input_diff_custom.ll"
+    input_file.write_text('!0 = !{!"x"}\n')
+
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=["diff code --wait", "exit"]):
+            with patch("tempfile.gettempdir", return_value=str(tmp_path)):
+                with patch("subprocess.run") as mock_run:
+                    cli.main()
+
+    assert mock_run.call_count == 1
+    cmd = mock_run.call_args.args[0]
+    assert cmd[0] == "code"
+    assert cmd[1] == "--wait"
+    assert cmd[2] == str(input_file)
+    assert cmd[3].startswith(str(tmp_path / "dimeta-query-tmp-input_diff_custom-"))
+    assert cmd[3].endswith(".ll")
+    assert not os.path.exists(cmd[3])
+
+
+def test_diff_viewer_not_found(tmp_path):
+    input_file = tmp_path / "input_diff_missing.ll"
+    input_file.write_text('!0 = !{!"x"}\n')
+
+    with patch("sys.argv", ["dimeta", str(input_file)]):
+        with patch("builtins.input", side_effect=["diff", "exit"]):
+            with patch("tempfile.gettempdir", return_value=str(tmp_path)):
+                with patch("subprocess.run", side_effect=FileNotFoundError):
+                    with patch("builtins.print") as mock_print:
+                        cli.main()
+                        assert any(
+                            "Diff Error: Viewer 'meld' not found." in str(args)
+                            for args, kwargs in mock_print.call_args_list
+                        )
