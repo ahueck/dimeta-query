@@ -116,7 +116,9 @@ def reduce_difile_nodes(node_map: Dict[str, MDNode]) -> int:
     directory_to_short = calculate_shortest_unique_suffixes(directories)
     
     modified_count = 0
-    for node, filename, directory in zip(difile_nodes, filenames, directories):
+    for node, filename, directory in zip(
+        difile_nodes, filenames, directories, strict=True
+    ):
         target = node._target
         assert isinstance(target, MDSpecializedNode)
         

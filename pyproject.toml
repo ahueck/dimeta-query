@@ -7,7 +7,7 @@ name = "dimeta-query"
 version = "0.1.0"
 description = "LLVM Metadata Parser and Query Engine"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "lark",
     "cxxfilt",
@@ -18,11 +18,17 @@ dependencies = [
 test = [
     "pytest",
     "pytest-cov",
+    "pytest-asyncio",
 ]
 dev = [
     "ruff",
     "mypy",
     "shiv",
+]
+tui = [
+    "textual[syntax]>=0.60",
+    "textual-diff-view",
+    "tree-sitter-llvm",
 ]
 
 [project.scripts]
@@ -32,18 +38,18 @@ dimeta-query = "dimeta_query.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-dimeta_query = ["*.lark"]
+dimeta_query = ["*.lark", "*.scm"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "I"]
 ignore = []
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 strict = true
 ignore_missing_imports = true
 
