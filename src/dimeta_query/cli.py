@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from .formatter import format_ascii_tree, format_flat_list
 from .graph_manager import drop_node
+from .history import GraphSnapshot, HistoryManager
 from .ir import IRManager
 
 # Import all matchers and modifiers to inject into the sandbox
@@ -95,6 +96,9 @@ Available Commands:
                    -o, --overwrite: Overwrite the original opened file.
   diff [viewer ...] Compare original file vs current in-memory state
                    Default viewer: meld
+  undo             Undo the last mutating operation (drop / sweep)
+  redo             Re-apply the last undone operation
+  history          Show available undo/redo entries
   help             Show this help message
   exit / quit      Exit the REPL
 """.strip() + "\n")
@@ -383,6 +387,103 @@ def _handle_diff_command(
             except OSError:
                 pass
 
+_SignatureItem = tuple[str, str, int, bool]
+_Signature = tuple[int, tuple[_SignatureItem, ...]]
+
+
+def _snapshot_signature(manager: IRManager) -> _Signature:
+    """Cheap fingerprint of the manager's mutable state.
+
+    Used to decide whether a "mutating" command actually changed anything.
+    Avoids recording no-op snapshots (e.g. a ``drop`` against a node ID
+    that does not exist, or a ``sweep`` with nothing to remove).
+    """
+    items = tuple(
+        (
+            node_id,
+            node.raw_text,
+            node.ref_count,
+            node.is_distinct,
+        )
+        for node_id, node in sorted(manager.node_map.items())
+    )
+    return (len(manager.node_map), items)
+
+
+def _run_with_history(
+    history: HistoryManager,
+    manager: IRManager,
+    label: str,
+    func: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    """Capture, run, then conditionally record a snapshot.
+
+    The pre-mutation snapshot is recorded only if the operation actually
+    altered the graph state. This keeps the history stack semantically
+    meaningful and avoids wasting space on no-ops.
+    """
+    pre_signature = _snapshot_signature(manager)
+    snapshot = GraphSnapshot.capture(manager)
+    func(*args, **kwargs)
+    post_signature = _snapshot_signature(manager)
+    if pre_signature != post_signature:
+        history.record(label, snapshot)
+
+
+def _handle_undo_command(manager: IRManager, history: HistoryManager) -> None:
+    if not history.can_undo():
+        print("Nothing to undo.")
+        return
+    current = GraphSnapshot.capture(manager)
+    result = history.undo(current)
+    # ``result`` cannot be None here because can_undo() returned True, but
+    # we still guard for type-narrowing clarity.
+    if result is None:
+        print("Nothing to undo.")
+        return
+    label, snapshot = result
+    snapshot.restore(manager)
+    print(f"Undone: {label}")
+
+
+def _handle_redo_command(manager: IRManager, history: HistoryManager) -> None:
+    if not history.can_redo():
+        print("Nothing to redo.")
+        return
+    current = GraphSnapshot.capture(manager)
+    result = history.redo(current)
+    if result is None:
+        print("Nothing to redo.")
+        return
+    label, snapshot = result
+    snapshot.restore(manager)
+    print(f"Redone: {label}")
+
+
+def _handle_history_command(history: HistoryManager) -> None:
+    undo_labels = history.undo_labels()
+    redo_labels = history.redo_labels()
+    if not undo_labels and not redo_labels:
+        print("History is empty.")
+        return
+
+    if undo_labels:
+        print("Undo stack (most recent last):")
+        for idx, label in enumerate(undo_labels, 1):
+            print(f"  {idx}. {label}")
+    else:
+        print("Undo stack: (empty)")
+
+    if redo_labels:
+        print("Redo stack (most recent last):")
+        for idx, label in enumerate(redo_labels, 1):
+            print(f"  {idx}. {label}")
+    else:
+        print("Redo stack: (empty)")
+
+
 def main() -> None:
 
     parser = argparse.ArgumentParser(
@@ -416,6 +517,7 @@ def main() -> None:
         )
 
     sandbox_globals = setup_sandbox_globals()
+    history = HistoryManager()
 
     print("Type 'help' for available commands.")
     
@@ -443,13 +545,40 @@ def main() -> None:
         elif cmd == "p":
             _handle_print_command(manager, flags, payload)
         elif cmd == "drop":
-            _handle_drop_command(manager, flags, payload, sandbox_globals)
+            _run_with_history(
+                history,
+                manager,
+                f"drop {payload}" if payload else "drop",
+                _handle_drop_command,
+                manager,
+                flags,
+                payload,
+                sandbox_globals,
+            )
         elif cmd == "sweep":
-            _handle_sweep_command(manager, flags)
+            sweep_label_parts = ["sweep"]
+            if flags["reduce"]:
+                sweep_label_parts.append("-r")
+            if flags["all"]:
+                sweep_label_parts.append("-a")
+            _run_with_history(
+                history,
+                manager,
+                " ".join(sweep_label_parts),
+                _handle_sweep_command,
+                manager,
+                flags,
+            )
         elif cmd == "unparse":
             _handle_unparse_command(manager, flags, payload, args.file)
         elif cmd == "diff":
             _handle_diff_command(manager, payload, args.file)
+        elif cmd == "undo":
+            _handle_undo_command(manager, history)
+        elif cmd == "redo":
+            _handle_redo_command(manager, history)
+        elif cmd == "history":
+            _handle_history_command(history)
         else:
             print("Unknown command. Type 'help' for options.")
             continue

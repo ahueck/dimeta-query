@@ -33,6 +33,9 @@ options:
 | `sweep [-a] [-r]`     | Remove unreferenced metadata. `-a`: discard named nodes. `-r`: reduce DIFile paths. |
 | `unparse [-o] [file]` | Export the current graph to a `.ll` file, or use `-o` to overwrite the opened file. |
 | `diff [viewer ...]`   | Open a diff between the opened file and current state (default viewer: `meld`).     |
+| `undo`                | Revert the last mutating operation (`drop` or `sweep`).                             |
+| `redo`                | Re-apply the most recently undone operation.                                        |
+| `history`             | List the labels currently stored on the undo and redo stacks.                       |
 | `help`                | Show detailed command help.                                                         |
 | `exit`                | Exit the REPL.                                                                      |
 
@@ -207,12 +210,14 @@ src/dimeta_query/
 ├── formatter.py      # Output formatting and tree visualization
 ├── grammar.lark      # Lark grammar rules for LLVM metadata syntax
 ├── graph_manager.py  # Graph mutation, reference tracking, and garbage collection
+├── history.py        # Undo/redo snapshot and stack management
 ├── ir.py             # Raw LLVM IR text processing and reference extraction
 ├── matchers.py       # Specific query matchers for node types and properties
 ├── model.py          # Core data models (MDNode, MDSpecializedNode, etc.)
 ├── modifiers.py      # String modifiers for queries (e.g., fuzzy, demangle)
 ├── parser.py         # Lark-based parser for building the metadata graph
 ├── query.py          # Query execution engine and base matching logic
+├── reducers.py       # DIFile path/checksum reduction utilities
 ├── repl.py           # Interactive query and manipulation shell
 └── unparser.py       # Graph state validation and structural checks
 tests/                # Test suite
