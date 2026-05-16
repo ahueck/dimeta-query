@@ -53,6 +53,10 @@ python_version = "3.10"
 strict = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "dimeta_query.tui"
+disallow_subclassing_any = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
