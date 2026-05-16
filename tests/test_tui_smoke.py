@@ -373,3 +373,32 @@ async def test_tui_diff_uses_llvm_highlight(tmp_path):
         assert "$text-primary bold" in all_styles, (
             f"LLVM palette not present in diff content; got styles={all_styles!r}"
         )
+
+
+@pytest.mark.asyncio
+async def test_tui_selective_highlighting(tmp_path):
+    """Verify that 'p' is highlighted but 'help' and errors are not."""
+    pytest.importorskip("tree_sitter_llvm")
+    from textual.widgets import TextArea
+
+    app, _ = _build_app(tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        ta = app.query_one("#results-view", TextArea)
+
+        # 1. Print command -> should be highlighted
+        await _submit(pilot, "p !1")
+        assert ta.language == "llvm"
+
+        # 2. Help command -> should NOT be highlighted
+        await _submit(pilot, "help")
+        assert ta.language is None
+
+        # 3. Unknown command -> should NOT be highlighted
+        await _submit(pilot, "bogus")
+        assert ta.language is None
+
+        # 4. Error message (e.g. invalid query) -> should NOT be highlighted
+        await _submit(pilot, "m invalid(")
+        assert "Query Error" in ta.text
+        assert ta.language is None

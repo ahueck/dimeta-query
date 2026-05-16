@@ -84,7 +84,7 @@ class DraggableSplitter(Widget):
         self._dragging = False
 
     def render(self) -> str:
-        return "═══ Drag to Resize ═══"
+        return "═══════════════"
 
     def on_mouse_down(self, event: MouseDown) -> None:
         self.capture_mouse()
@@ -98,7 +98,7 @@ class DraggableSplitter(Widget):
         if not self._dragging:
             return
         target_pane = self.app.query_one(f"#{self.target_id}")
-        min_height = 3
+        min_height = 2
         max_height = max(min_height, self.app.size.height - 8)
         new_height = event.screen_y - 1
         target_pane.styles.height = max(min_height, min(new_height, max_height))
@@ -185,15 +185,16 @@ class DimetaApp(App[None]):
 
         yield DraggableSplitter(target_id="source-view")
 
-        with VerticalScroll(id="results-container"):
+        with VerticalScroll(id="results-container", can_focus=False, can_focus_children=True,):
             yield self._make_llvm_textarea(
                 "Welcome to dimeta-query TUI. "
                 "Press F1 for help, Ctrl+Q to quit.",
                 id="results-view",
                 show_line_numbers=False,
-                show_cursor=False,
-                can_focus=False,
+                show_cursor=True,
+                can_focus=True,
                 highlight_cursor_line=False,
+                language=None,
             )
 
         yield Input(placeholder="dimeta-query> ", id="command-input")
@@ -208,8 +209,9 @@ class DimetaApp(App[None]):
         show_cursor: bool = True,
         can_focus: bool = True,
         highlight_cursor_line: bool = True,
+        language: Optional[str] = "llvm",
     ) -> TextArea:
-        """Build a read-only TextArea with LLVM tree-sitter highlighting attached."""
+        """Build a read-only TextArea with optional highlighting attached."""
         text_area = TextArea(
             text,
             read_only=True,
@@ -219,15 +221,25 @@ class DimetaApp(App[None]):
             id=id,
         )
         text_area.can_focus = can_focus
+
+        # Always try to register the LLVM highlighter if available, so that
+        # we can toggle it on later even if starting as plain text.
+        llvm_registered = False
         llvm = load_llvm_language_and_query()
         if llvm is not None:
             lang, query = llvm
             try:
                 text_area.register_language("llvm", lang, query)
-                text_area.language = "llvm"
+                llvm_registered = True
             except Exception:
-                # Highlighter failed to attach; fall back to plain text.
                 pass
+
+        if language == "llvm":
+            if llvm_registered:
+                text_area.language = "llvm"
+        elif language is not None:
+            text_area.language = language
+
         return text_area
 
     def on_mount(self) -> None:
@@ -326,7 +338,7 @@ class DimetaApp(App[None]):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             cli_module.print_help()
-        await self._show_text(buf.getvalue() or "(no help)")
+        await self._show_text(buf.getvalue() or "(no help)", language=None)
 
     # ------------------------------------------------------------------
     # Command history (Up/Down inside the Input)
@@ -417,7 +429,16 @@ class DimetaApp(App[None]):
         except Exception as e:  # safety net — handlers normally swallow errors
             print(f"Unexpected error: {e}", file=buf)
 
-        await self._show_text(buf.getvalue() or "(no output)")
+        output = buf.getvalue() or "(no output)"
+        # Selectively disable highlighting for non-IR output (errors, status).
+        language: Optional[str] = "llvm"
+        if not recognized or any(
+            output.startswith(p)
+            for p in ("Error:", "Query Error:", "Execution Error:", "Success:", "Undone:", "Redone:")
+        ):
+            language = None
+
+        await self._show_text(output, language=language)
         self._refresh_subtitle()
         if cmd in _MUTATING_COMMANDS:
             await self._refresh_source_view()
@@ -447,10 +468,10 @@ class DimetaApp(App[None]):
             with open(tmp_path, "r") as f:
                 code_modified = f.read()
         except DanglingReferenceError as e:
-            await self._show_text(f"Diff Error: {e}")
+            await self._show_text(f"Diff Error: {e}", language=None)
             return
         except Exception as e:
-            await self._show_text(f"Diff Error: {e}")
+            await self._show_text(f"Diff Error: {e}", language=None)
             return
 
         diff_widget = LlvmDiffView(
@@ -488,13 +509,13 @@ class DimetaApp(App[None]):
         result_text_area.load_text("")
         result_text_area.scroll_home(animate=False)
 
-    async def _show_text(self, text: str) -> None:
+    async def _show_text(self, text: str, language: Optional[str] = "llvm") -> None:
         await self._remove_diff_widgets()
         result_text_area = self.query_one("#results-view", TextArea)
         result_text_area.display = True
+        result_text_area.language = language
         # Textual's TextArea applies tree-sitter LLVM highlighting via its
-        # registered language; we just load the text. Non-LLVM lines
-        # (errors, help) yield no captures and render in the base style.
+        # registered language; we just load the text.
         result_text_area.load_text(text)
         result_text_area.scroll_home(animate=False)
 
