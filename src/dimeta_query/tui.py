@@ -460,14 +460,15 @@ class DimetaApp(App[None]):
             code_modified=code_modified,
             auto_split=True,
             annotations=True,
+            wrap=True,
         )
 
         # Hide the persistent results TextArea and mount the diff widget
         # alongside it in the VerticalScroll. Calling _clear_results would
         # remove any previous DiffView; do that first.
         await self._remove_diff_widgets()
-        ta = self.query_one("#results-view", TextArea)
-        ta.display = False
+        result_text_area = self.query_one("#results-view", TextArea)
+        result_text_area.display = False
         container = self.query_one("#results-container", VerticalScroll)
         await container.mount(diff_widget)
 
@@ -482,10 +483,10 @@ class DimetaApp(App[None]):
 
     async def _clear_results(self) -> None:
         await self._remove_diff_widgets()
-        ta = self.query_one("#results-view", TextArea)
-        ta.display = True
-        ta.load_text("")
-        ta.scroll_home(animate=False)
+        result_text_area = self.query_one("#results-view", TextArea)
+        result_text_area.display = True
+        result_text_area.load_text("")
+        result_text_area.scroll_home(animate=False)
 
     async def _show_text(self, text: str) -> None:
         await self._remove_diff_widgets()
