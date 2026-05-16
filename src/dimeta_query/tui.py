@@ -17,7 +17,7 @@ import io
 import os
 import tempfile
 from collections import deque
-from typing import Any, Deque, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, cast
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -34,6 +34,9 @@ from ._highlight import highlight_llvm_to_content, load_llvm_language_and_query
 from .history import HistoryManager
 from .ir import IRManager
 from .unparser import DanglingReferenceError
+
+if TYPE_CHECKING:
+    from textual.document._document import Document
 
 # Commands that mutate IRManager state and therefore require a source-view refresh.
 _MUTATING_COMMANDS = frozenset({"drop", "sweep", "undo", "redo"})
@@ -147,6 +150,10 @@ class DimetaApp(App[None]):
         Binding("ctrl+y", "redo", "Redo", show=True),
         Binding("ctrl+s", "save_inplace", "Save", show=True),
         Binding("f1", "show_help", "Help", show=True),
+        Binding("n", "source_search_next", "Next", show=False),
+        Binding("N", "source_search_prev", "Prev", show=False),
+        Binding("/", "start_source_search", "Search", show=False),
+        Binding(":", "focus_command", "Command", show=False),
     ]
 
     def __init__(
@@ -170,6 +177,10 @@ class DimetaApp(App[None]):
         # Temp files mounted into DiffView; cleaned up on next command/unmount.
         self._pending_temp_files: List[str] = []
 
+        # TUI-only source search state.
+        self._source_search_query: Optional[str] = None
+        self._source_search_last_idx: Optional[int] = None
+
     # ------------------------------------------------------------------
     # Compose / layout
     # ------------------------------------------------------------------
@@ -185,7 +196,11 @@ class DimetaApp(App[None]):
 
         yield DraggableSplitter(target_id="source-view")
 
-        with VerticalScroll(id="results-container", can_focus=False, can_focus_children=True,):
+        with VerticalScroll(
+            id="results-container",
+            can_focus=False,
+            can_focus_children=True,
+        ):
             yield self._make_llvm_textarea(
                 "Welcome to dimeta-query TUI. "
                 "Press F1 for help, Ctrl+Q to quit.",
@@ -285,6 +300,8 @@ class DimetaApp(App[None]):
 
     async def _refresh_source_view(self) -> None:
         """Reload source pane from manager state, preserving cursor/scroll."""
+        self._source_search_query = None
+        self._source_search_last_idx = None
         try:
             ta = self.query_one("#source-view", TextArea)
         except Exception:
@@ -314,8 +331,25 @@ class DimetaApp(App[None]):
             pass
 
     # ------------------------------------------------------------------
-    # Bindings
+    # Bindings & Actions
     # ------------------------------------------------------------------
+    async def action_source_search_next(self) -> None:
+        if self._source_search_query:
+            await self._run_source_search(self._source_search_query, forward=True)
+
+    async def action_source_search_prev(self) -> None:
+        if self._source_search_query:
+            await self._run_source_search(self._source_search_query, forward=False)
+
+    async def action_start_source_search(self) -> None:
+        input_widget = self.query_one("#command-input", Input)
+        input_widget.value = "/"
+        input_widget.focus()
+        input_widget.cursor_position = 1
+
+    async def action_focus_command(self) -> None:
+        self.query_one("#command-input", Input).focus()
+
     async def action_quit(self) -> None:
         self._cleanup_temp_files()
         self.exit()
@@ -339,6 +373,17 @@ class DimetaApp(App[None]):
         with contextlib.redirect_stdout(buf):
             cli_module.print_help()
         await self._show_text(buf.getvalue() or "(no help)", language=None)
+        # Append TUI-only commands to the help output.
+        ta = self.query_one("#results-view", TextArea)
+        tui_help = (
+            "\nTUI-only Commands:\n"
+            "  /<text>          Search source pane\n"
+            "  n                Jump to next match (when source is focused)\n"
+            "  N                Jump to previous match (when source is focused)\n"
+            "  :                Focus command input\n"
+        )
+        ta.load_text(ta.text + tui_help)
+        ta.scroll_end(animate=False)
 
     # ------------------------------------------------------------------
     # Command history (Up/Down inside the Input)
@@ -385,6 +430,11 @@ class DimetaApp(App[None]):
         if not line:
             return
 
+        if line.startswith("/"):
+            self._cmd_history.append(line)
+            await self._run_source_search(line[1:])
+            return
+
         self._cmd_history.append(line)
 
         cmd, flags, payload = cli_module.parse_repl_line(line)
@@ -403,6 +453,63 @@ class DimetaApp(App[None]):
             return
 
         await self._run_captured(cmd, flags, payload)
+
+    async def _run_source_search(self, query: str, forward: bool = True) -> None:
+        """Find the needle in the source pane, selecting the match."""
+        if not query:
+            return
+
+        try:
+            ta = self.query_one("#source-view", TextArea)
+        except Exception:
+            return
+
+        text = ta.text
+        if not text:
+            return
+
+        # Use TextArea/Document APIs to determine search start.
+        doc = cast("Document", ta.document)
+        if (
+            query == self._source_search_query
+            and self._source_search_last_idx is not None
+        ):
+            # Repeat search: move past current match.
+            start_offset = self._source_search_last_idx + (1 if forward else -1)
+        else:
+            # New search: start from cursor.
+            start_offset = doc.get_index_from_location(ta.cursor_location)
+
+        if forward:
+            idx = text.find(query, start_offset)
+            if idx == -1:
+                idx = text.find(query, 0)  # Wrap
+        else:
+            idx = text.rfind(query, 0, max(0, start_offset))
+            if idx == -1:
+                idx = text.rfind(query)  # Wrap
+
+        if idx == -1:
+            await self._show_text(f'No match for "{query}".', language=None)
+            self._source_search_query = None
+            self._source_search_last_idx = None
+            return
+
+        self._source_search_query = query
+        self._source_search_last_idx = idx
+
+        target_loc = doc.get_location_from_index(idx)
+        end_loc = doc.get_location_from_index(idx + len(query))
+
+        ta.move_cursor(target_loc)
+        ta.move_cursor(end_loc, select=True, center=True)
+
+        await self._show_text(
+            f'Found "{query}" at line {target_loc[0] + 1}, column {target_loc[1]}.',
+            language=None,
+        )
+        # Shift focus to source for n/N navigation.
+        ta.focus()
 
     async def _run_captured(
         self, cmd: str, flags: Dict[str, Any], payload: str
@@ -434,7 +541,14 @@ class DimetaApp(App[None]):
         language: Optional[str] = "llvm"
         if not recognized or any(
             output.startswith(p)
-            for p in ("Error:", "Query Error:", "Execution Error:", "Success:", "Undone:", "Redone:")
+            for p in (
+                "Error:",
+                "Query Error:",
+                "Execution Error:",
+                "Success:",
+                "Undone:",
+                "Redone:",
+            )
         ):
             language = None
 

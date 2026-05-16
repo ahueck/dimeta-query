@@ -402,3 +402,61 @@ async def test_tui_selective_highlighting(tmp_path):
         await _submit(pilot, "m invalid(")
         assert "Query Error" in ta.text
         assert ta.language is None
+
+
+@pytest.mark.asyncio
+async def test_tui_source_search(tmp_path):
+    """Test the TUI-only /search command."""
+    from textual.widgets import TextArea
+
+    app, _ = _build_app(tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        ta = app.query_one("#source-view", TextArea)
+
+        # 1. Search for 'int' - should find !1 = !DIBasicType(name: "int", ...)
+        await _submit(pilot, "/int")
+        assert app._source_search_query == "int"
+        # The first 'int' in SAMPLE_IR is at !1's name attribute.
+        # SAMPLE_IR starts with "define i32 @main() {\nentry:\n  ret i32 0\n}\n"
+        # then "!1 = !DIBasicType(name: \"int\"..."
+        assert "int" in ta.selected_text
+        assert ta.selection.start[0] > 0  # It's in the metadata section
+
+        # 2. Search for 'i32' - finds the one in 'define i32 @main'
+        await _submit(pilot, "/i32")
+        assert ta.selected_text == "i32"
+        assert ta.selection.start == (0, 7)
+        # Focus should have shifted to source.
+        assert ta.has_focus
+
+        # 3. Repeat search for 'i32' via 'n' key
+        await pilot.press("n")
+        assert ta.selected_text == "i32"
+        # '  ret i32 0' is on line 2.
+        assert ta.selection.start == (2, 6)
+
+        # 4. Reverse search for 'i32' via 'N' key
+        await pilot.press("N")
+        assert ta.selection.start == (0, 7)
+
+        # 5. Press ':' to go back to command input
+        await pilot.press(":")
+        assert pilot.app.query_one("#command-input").has_focus
+
+        # 6. Press '/' from source to search again
+        ta.focus()
+        await pilot.press("/")
+        assert pilot.app.query_one("#command-input").has_focus
+        assert pilot.app.query_one("#command-input").value == "/"
+
+        # 7. Missing match
+        await _submit(pilot, "/notfound")
+        res = _results_text(app)
+        assert 'No match for "notfound"' in res
+
+        # 6. Help should include TUI-only command
+        await _submit(pilot, "help")
+        res = _results_text(app)
+        assert "TUI-only Commands" in res
+        assert "/<text>" in res
