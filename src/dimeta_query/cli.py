@@ -40,7 +40,7 @@ from .matchers import (
 from .modifiers import demangle, fuzzy
 from .query import MatchResult, evaluate_query
 from .repl import SecurityError, execute_safely
-from .unparser import DanglingReferenceError
+from .unparser import DanglingReferenceError, Unparser
 
 
 def setup_sandbox_globals() -> Dict[str, Any]:
@@ -291,6 +291,11 @@ def _handle_drop_command(
                 f"Success: Dropped {success_count} matching nodes "
                 f"(force={flags['force']})."
             )
+            if flags["force"]:
+                try:
+                    Unparser().validate(manager.node_map)
+                except DanglingReferenceError as e:
+                    print(f"Warning: Graph is now inconsistent: {e}")
         except (SecurityError, ValueError, NameError) as e:
             print(f"Query Error: {e}")
         except Exception as e:
@@ -304,6 +309,11 @@ def _handle_drop_command(
             f"Success: Dropped !{target} (force={flags['force']}) "
             "and executed cascade."
         )
+        if flags["force"]:
+            try:
+                Unparser().validate(manager.node_map)
+            except DanglingReferenceError as e:
+                print(f"Warning: Graph is now inconsistent: {e}")
     except ValueError as e:
         print(f"Failed to drop !{target}: {e}")
     except Exception as e:
@@ -345,6 +355,10 @@ def _handle_unparse_command(
         print(f"Success: Graph safely written to {target}")
     except DanglingReferenceError as e:
         print(f"Unparse Error: {e}")
+        print(
+            "Referenced nodes must have definitions. "
+            "Use 'undo' or restore the missing nodes."
+        )
     except Exception as e:
         print(f"Failed to write file: {e}")
 
