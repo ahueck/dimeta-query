@@ -270,33 +270,13 @@ class DimetaApp(App[None]):
             f"{len(self.manager.node_map)} nodes"
         )
 
-    @staticmethod
-    def _metadata_sort_key(node_id: str) -> Any:
-        """Mirror IRManager.save_file's sort: named IDs first, then numeric."""
-        if node_id.isdigit():
-            return (1, int(node_id))
-        return (0, node_id)
-
     def _render_source_text(self) -> str:
         """Build the source-view contents: IR lines + serialized metadata.
 
         Matches IRManager.save_file's serialization so the source view
-        previews what `unparse` would write. Nodes with empty raw_text
-        (proxies, dropped-but-still-referenced) are skipped.
+        previews what `unparse` would write.
         """
-        parts: List[str] = ["".join(self.manager.ir_lines)]
-        sorted_ids = sorted(self.manager.node_map.keys(), key=self._metadata_sort_key)
-        meta_lines = []
-        for node_id in sorted_ids:
-            node = self.manager.node_map[node_id]
-            if node.raw_text:
-                meta_lines.append(node.raw_text)
-        if meta_lines:
-            if parts[0] and not parts[0].endswith("\n"):
-                parts.append("\n")
-            parts.append("\n".join(meta_lines))
-            parts.append("\n")
-        return "".join(parts)
+        return self.manager.unparse()
 
     async def _refresh_source_view(self) -> None:
         """Reload source pane from manager state, preserving cursor/scroll."""
