@@ -107,6 +107,56 @@ class IRManager:
         self.ir_refs = extract_ir_references(self.ir_lines)
         self.unresolved = validate_graph(self.node_map)
 
+    def unparse(self) -> str:
+        """
+        Returns the full unparsed IR and metadata as a string.
+        """
+        parts = []
+
+        # 1. Clean up IR lines: strip trailing blank lines.
+        clean_ir = list(self.ir_lines)
+        while clean_ir and not clean_ir[-1].strip():
+            clean_ir.pop()
+
+        parts.extend(clean_ir)
+
+        # 2. Add a single blank line before metadata if any exists
+        has_any_metadata = any(n.raw_text for n in self.node_map.values())
+        if has_any_metadata:
+            if parts and not parts[-1].endswith("\n"):
+                parts.append("\n")
+            parts.append("\n")
+
+        # 3. Sort and write metadata
+        def _sort_key(x: str) -> Tuple[int, object]:
+            if x.isdigit():
+                return (1, int(x))
+            return (0, x)
+
+        sorted_ids = sorted(self.node_map.keys(), key=_sort_key)
+
+        has_named = False
+        has_numeric = False
+
+        for node_id in sorted_ids:
+            node_obj = self.node_map[node_id]
+            if not node_obj.raw_text:
+                continue
+
+            is_numeric = node_id.isdigit()
+            if is_numeric and has_named and not has_numeric:
+                # Transition from named to numeric: add a blank line
+                parts.append("\n")
+
+            if is_numeric:
+                has_numeric = True
+            else:
+                has_named = True
+
+            parts.append(f"{node_obj.raw_text}\n")
+
+        return "".join(parts)
+
     def save_file(self, filepath: str) -> None:
         """
         Validates the current graph and writes the IR and metadata nodes back to a file.
@@ -116,21 +166,7 @@ class IRManager:
 
         try:
             with open(filepath, "w") as f:
-                for ir_line in self.ir_lines:
-                    f.write(ir_line)
-
-                # Write metadata definitions sorted by ID
-                # Numeric IDs (group 1) after named/string IDs (group 0)
-                def _sort_key(x: str) -> Tuple[int, object]:
-                    if x.isdigit():
-                        return (1, int(x))
-                    return (0, x)
-
-                sorted_ids = sorted(self.node_map.keys(), key=_sort_key)
-                for node_id in sorted_ids:
-                    node_obj = self.node_map[node_id]
-                    if node_obj.raw_text:
-                        f.write(f"{node_obj.raw_text}\n")
+                f.write(self.unparse())
         except Exception as e:
             raise RuntimeError(f"Failed to write file: {e}") from e
 

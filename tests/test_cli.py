@@ -299,7 +299,7 @@ def test_cli_force_drop(tmp_path):
                     for args, kwargs in mock_print.call_args_list
                 )
 
-    # Try to drop !1 with force - should succeed
+    # Try to drop !1 with force - should succeed but warn
     output_file = tmp_path / "output_force.ll"
     with patch("sys.argv", ["dimeta", str(input_file)]):
         with patch(
@@ -308,19 +308,27 @@ def test_cli_force_drop(tmp_path):
         ):
             with patch("builtins.print") as mock_print:
                 cli.main()
+                # Verify success message
                 assert any(
                     "Success: Dropped !1 (force=True)" in str(args)
                     for args, kwargs in mock_print.call_args_list
                 )
+                # Verify inconsistency warning
+                assert any(
+                    "Warning: Graph is now inconsistent" in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
+                # Verify unparse failure message
+                assert any(
+                    "Unparse Error" in str(args)
+                    for args, kwargs in mock_print.call_args_list
+                )
 
-    assert output_file.exists()
-    output_text = output_file.read_text()
-    # !0 should still be there referencing !1
-    assert "!0 = !{!1}" in output_text
-    # !1 should NOT be there as a definition (it became a proxy)
-    assert "!1 = !{!\"referenced\"}" not in output_text
+    assert not output_file.exists()
 
-def test_cli_sweep_clean(tmp_path):
+
+def test_cli_overwrite(tmp_path):
+
     input_content = [
         'define void @foo() !dbg !0 {',
         '  ret void',

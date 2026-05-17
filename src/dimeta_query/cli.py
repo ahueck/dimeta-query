@@ -40,7 +40,7 @@ from .matchers import (
 from .modifiers import demangle, fuzzy
 from .query import MatchResult, evaluate_query
 from .repl import SecurityError, execute_safely
-from .unparser import DanglingReferenceError
+from .unparser import DanglingReferenceError, Unparser
 
 
 def setup_sandbox_globals() -> Dict[str, Any]:
@@ -291,6 +291,11 @@ def _handle_drop_command(
                 f"Success: Dropped {success_count} matching nodes "
                 f"(force={flags['force']})."
             )
+            if flags["force"]:
+                try:
+                    Unparser().validate(manager.node_map)
+                except DanglingReferenceError as e:
+                    print(f"Warning: Graph is now inconsistent: {e}")
         except (SecurityError, ValueError, NameError) as e:
             print(f"Query Error: {e}")
         except Exception as e:
@@ -304,6 +309,11 @@ def _handle_drop_command(
             f"Success: Dropped !{target} (force={flags['force']}) "
             "and executed cascade."
         )
+        if flags["force"]:
+            try:
+                Unparser().validate(manager.node_map)
+            except DanglingReferenceError as e:
+                print(f"Warning: Graph is now inconsistent: {e}")
     except ValueError as e:
         print(f"Failed to drop !{target}: {e}")
     except Exception as e:
@@ -345,6 +355,10 @@ def _handle_unparse_command(
         print(f"Success: Graph safely written to {target}")
     except DanglingReferenceError as e:
         print(f"Unparse Error: {e}")
+        print(
+            "Referenced nodes must have definitions. "
+            "Use 'undo' or restore the missing nodes."
+        )
     except Exception as e:
         print(f"Failed to write file: {e}")
 
@@ -484,14 +498,10 @@ def _handle_history_command(history: HistoryManager) -> None:
         print("Redo stack: (empty)")
 
 
-def main() -> None:
-
-    parser = argparse.ArgumentParser(
-        description="dimeta-query: Interactive LLVM Metadata Query Engine"
-    )
-    parser.add_argument("file", help="Path to the .ll file to analyze")
-    args = parser.parse_args()
-
+def _load_and_init(
+    args: argparse.Namespace,
+) -> tuple[IRManager, HistoryManager, Dict[str, Any]]:
+    """Parse the input file and construct shared state for REPL or TUI."""
     if not os.path.isfile(args.file):
         print(f"Error: File '{args.file}' not found.")
         sys.exit(1)
@@ -509,7 +519,7 @@ def main() -> None:
         f"Loaded {len(manager.node_map)} nodes from "
         f"{manager.metadata_count} metadata definitions."
     )
-    
+
     if manager.unresolved:
         print(
             f"Warning: {len(manager.unresolved)} proxy nodes were "
@@ -518,9 +528,77 @@ def main() -> None:
 
     sandbox_globals = setup_sandbox_globals()
     history = HistoryManager()
+    return manager, history, sandbox_globals
 
+
+def dispatch_command(
+    cmd: str,
+    flags: Dict[str, Any],
+    payload: str,
+    manager: IRManager,
+    history: HistoryManager,
+    sandbox_globals: Dict[str, Any],
+    opened_file: str,
+) -> bool:
+    """Execute one parsed REPL command.
+
+    Returns True if the command was recognized and dispatched; False if it
+    was unknown. Mirrors the if/elif ladder used in the interactive REPL so
+    that both the REPL and the TUI share a single dispatch path.
+    """
+    if cmd == "m":
+        _handle_match_command(manager, flags, payload, sandbox_globals)
+    elif cmd == "p":
+        _handle_print_command(manager, flags, payload)
+    elif cmd == "drop":
+        _run_with_history(
+            history,
+            manager,
+            f"drop {payload}" if payload else "drop",
+            _handle_drop_command,
+            manager,
+            flags,
+            payload,
+            sandbox_globals,
+        )
+    elif cmd == "sweep":
+        sweep_label_parts = ["sweep"]
+        if flags["reduce"]:
+            sweep_label_parts.append("-r")
+        if flags["all"]:
+            sweep_label_parts.append("-a")
+        _run_with_history(
+            history,
+            manager,
+            " ".join(sweep_label_parts),
+            _handle_sweep_command,
+            manager,
+            flags,
+        )
+    elif cmd == "unparse":
+        _handle_unparse_command(manager, flags, payload, opened_file)
+    elif cmd == "diff":
+        _handle_diff_command(manager, payload, opened_file)
+    elif cmd == "undo":
+        _handle_undo_command(manager, history)
+    elif cmd == "redo":
+        _handle_redo_command(manager, history)
+    elif cmd == "history":
+        _handle_history_command(history)
+    else:
+        return False
+    return True
+
+
+def run_repl(
+    manager: IRManager,
+    history: HistoryManager,
+    sandbox_globals: Dict[str, Any],
+    opened_file: str,
+) -> None:
+    """Run the classic line-based REPL."""
     print("Type 'help' for available commands.")
-    
+
     while True:
         try:
             user_input = input("dimeta> ").strip()
@@ -540,48 +618,60 @@ def main() -> None:
             print_help()
             continue
 
-        if cmd == "m":
-            _handle_match_command(manager, flags, payload, sandbox_globals)
-        elif cmd == "p":
-            _handle_print_command(manager, flags, payload)
-        elif cmd == "drop":
-            _run_with_history(
-                history,
-                manager,
-                f"drop {payload}" if payload else "drop",
-                _handle_drop_command,
-                manager,
-                flags,
-                payload,
-                sandbox_globals,
-            )
-        elif cmd == "sweep":
-            sweep_label_parts = ["sweep"]
-            if flags["reduce"]:
-                sweep_label_parts.append("-r")
-            if flags["all"]:
-                sweep_label_parts.append("-a")
-            _run_with_history(
-                history,
-                manager,
-                " ".join(sweep_label_parts),
-                _handle_sweep_command,
-                manager,
-                flags,
-            )
-        elif cmd == "unparse":
-            _handle_unparse_command(manager, flags, payload, args.file)
-        elif cmd == "diff":
-            _handle_diff_command(manager, payload, args.file)
-        elif cmd == "undo":
-            _handle_undo_command(manager, history)
-        elif cmd == "redo":
-            _handle_redo_command(manager, history)
-        elif cmd == "history":
-            _handle_history_command(history)
-        else:
+        if not dispatch_command(
+            cmd, flags, payload, manager, history, sandbox_globals, opened_file
+        ):
             print("Unknown command. Type 'help' for options.")
-            continue
+
+
+def _should_use_tui(args: argparse.Namespace) -> bool:
+    """Decide whether to launch the TUI for this invocation."""
+    if args.no_tui:
+        return False
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    return importlib.util.find_spec("textual") is not None
+
+
+def main() -> None:
+
+    parser = argparse.ArgumentParser(
+        description="dimeta-query: Interactive LLVM Metadata Query Engine"
+    )
+    parser.add_argument("file", help="Path to the .ll file to analyze")
+    parser.add_argument(
+        "--no-tui",
+        "--repl",
+        dest="no_tui",
+        action="store_true",
+        help="Force the classic line-based REPL instead of the Textual TUI.",
+    )
+    args = parser.parse_args()
+
+    manager, history, sandbox_globals = _load_and_init(args)
+
+    if _should_use_tui(args):
+        try:
+            from .tui import run_tui
+        except ImportError as e:
+            print(
+                f"TUI dependencies unavailable ({e}); falling back to REPL. "
+                "Install with: pip install dimeta-query[tui]"
+            )
+            run_repl(manager, history, sandbox_globals, args.file)
+            return
+        run_tui(manager, history, sandbox_globals, args.file)
+        return
+
+    # REPL fallback path
+    if not args.no_tui and sys.stdout.isatty():
+        # User likely wanted the TUI but Textual isn't installed.
+        print(
+            "Textual not installed; falling back to REPL. "
+            "Install with: pip install dimeta-query[tui]"
+        )
+    run_repl(manager, history, sandbox_globals, args.file)
+
 
 if __name__ == "__main__":
     main()

@@ -20,7 +20,7 @@ typecheck:
 
 build: clean
 	mkdir -p $(DIST_DIR)
-	shiv --compressed -o $(DIST_DIR)/$(APP_NAME) -e dimeta_query.cli:main .
+	shiv --compressed -o $(DIST_DIR)/$(APP_NAME) -e dimeta_query.cli:main ".[tui]"
 
 run: build
 	./$(DIST_DIR)/$(APP_NAME) --help
