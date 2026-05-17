@@ -106,7 +106,7 @@ class DraggableSplitter(Widget):
             return
         target_pane = self.app.query_one(f"#{self.target_id}")
         min_height = 2
-        max_height = max(min_height, self.app.size.height - 8)
+        max_height = max(min_height, self.app.size.height - 11)
         new_height = event.screen_y - 1
         target_pane.styles.height = max(min_height, min(new_height, max_height))
 
@@ -143,6 +143,7 @@ class DimetaApp(App[None]):
 
     #command-input {
         height: 3;
+        min-height: 3;
         border: round #4a4a4a;
     }
     """
@@ -216,7 +217,7 @@ class DimetaApp(App[None]):
                 language=None,
             )
 
-        yield Input(placeholder="dimeta-query> ", id="command-input")
+        yield Input(placeholder="dimeta-query> ", id="command-input", select_on_focus=False)
         yield Footer()
 
     @staticmethod
