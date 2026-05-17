@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import re
 import tempfile
 from collections import deque
 from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, cast
@@ -24,7 +25,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.content import Content
-from textual.events import MouseDown, MouseMove, MouseUp
+from textual.events import Click, MouseDown, MouseMove, MouseUp
 from textual.widget import Widget
 from textual.widgets import Footer, Header, Input, TextArea
 from textual_diff_view import DiffView
@@ -40,6 +41,9 @@ if TYPE_CHECKING:
 
 # Commands that mutate IRManager state and therefore require a source-view refresh.
 _MUTATING_COMMANDS = frozenset({"drop", "sweep", "undo", "redo"})
+
+# Regex for metadata references like !1 or !42.
+_METADATA_REF_RE = re.compile(r"!\d+")
 
 
 class LlvmDiffView(DiffView):
@@ -263,6 +267,55 @@ class DimetaApp(App[None]):
             self.query_one("#command-input", Input).focus()
         except Exception:
             pass
+
+    async def on_click(self, event: Click) -> None:
+        """Jump to metadata definition on click in the source view."""
+        try:
+            source_text_area = self.query_one("#source-view", TextArea)
+        except Exception:
+            return
+
+        # Only handle left-clicks on the source TextArea.
+        is_source = (event.widget is not source_text_area and
+                     event.control is not source_text_area)
+        if event.button != 1 or is_source:
+            return
+
+        row, col = source_text_area.get_target_document_location(event)
+        try:
+            line = source_text_area.document.get_line(row)
+        except Exception:
+            return
+
+        # Identify which !N (if any) was clicked.
+        clicked_ref: Optional[str] = None
+        for match in _METADATA_REF_RE.finditer(line):
+            if match.start() <= col < match.end():
+                clicked_ref = match.group()
+                break
+
+        if clicked_ref is None:
+            return
+
+        # Find the definition line for this ID.
+        ref_id = clicked_ref[1:]
+        # Use (?m) for multiline search and match !N at start of line.
+        pattern = rf"(?m)^!{re.escape(ref_id)}\s*="
+        def_match = re.search(pattern, source_text_area.text)
+        if def_match is None:
+            msg = f"No definition found for {clicked_ref}."
+            await self._show_text(msg, language=None)
+            return
+
+        # Select the definition token and jump there.
+        doc = cast("Document", source_text_area.document)
+        start_loc = doc.get_location_from_index(def_match.start())
+        end_loc = doc.get_location_from_index(def_match.start() + len(clicked_ref))
+
+        source_text_area.move_cursor(start_loc)
+        source_text_area.move_cursor(end_loc, select=True, center=True)
+        source_text_area.focus()
+        event.stop()
 
     def _refresh_subtitle(self) -> None:
         self.sub_title = (

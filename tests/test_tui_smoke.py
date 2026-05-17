@@ -460,3 +460,101 @@ async def test_tui_source_search(tmp_path):
         res = _results_text(app)
         assert "TUI-only Commands" in res
         assert "/<text>" in res
+
+
+@pytest.mark.asyncio
+async def test_tui_metadata_click_jump(tmp_path):
+    """Test clicking on !N jumps to its definition in the source view."""
+    from textual.events import Click
+    from textual.widgets import TextArea
+
+    app, _ = _build_app(tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        ta = app.query_one("#source-view", TextArea)
+
+        # SAMPLE_IR has !1 and !2 definitions at the end.
+        # We find where !1 is referenced (or just where it exists).
+        # In SAMPLE_IR, !1 is at the start of its definition line.
+        # Let's find a line that *uses* !1.
+        # Since SAMPLE_IR doesn't have a use, let's update it or just click
+        # the definition itself to see if it "jumps" to itself.
+        # (valid test of the regex/matching logic).
+        # Actually, let's use a more realistic IR with a use.
+        test_ir = "define void @f() !dbg !1\n!1 = !DIBasicType(name: \"int\")\n"
+        ir_file = tmp_path / "jump_test.ll"
+        ir_file.write_text(test_ir)
+        manager = IRManager()
+        manager.parse_file(str(ir_file))
+        app.manager = manager
+        await app._refresh_source_view()
+        await pilot.pause()
+
+        # The source view now contains:
+        # define void @f() !dbg !1
+        # !1 = !DIBasicType(name: "int")
+
+        # Click on '!1' at the end of line 0.
+        # 'define void @f() !dbg !1'
+        #                        ^ index 22-24
+        line_0 = ta.document.get_line(0)
+        col = line_0.find("!1")
+        assert col != -1
+
+        # Simulate MouseDown. TextArea.get_target_document_location usually handles
+        # the mapping, but since we are in a test and don't have real screen coordinates
+        # for get_target_document_location to work reliably without a lot of mocking,
+        # we can verify that on_mouse_down handles it if we mock the location.
+
+        # However, Textual's Pilot can click at offsets.
+        # But get_target_document_location uses screen offsets.
+        # Let's just call the handler directly with a mocked event or
+        # use pilot.click with an offset if we can find it.
+
+        # Easier: verify the logic by calling the handler with a fake event that
+        # our mocked get_target_document_location will recognize.
+        import unittest.mock as mock
+        patch_path = "get_target_document_location"
+        with mock.patch.object(ta, patch_path, return_value=(0, col)):
+            event = Click(
+                widget=ta, x=0, y=0, delta_x=0, delta_y=0, button=1,
+                shift=False, meta=False, ctrl=False
+            )
+            await app.on_click(event)
+            await pilot.pause()
+    
+            # Should have jumped to line 2.
+            # In our test IR, unparse adds a blank line between IR and metadata.
+            assert ta.cursor_location == (2, 2)  # moved to end of !1
+            assert ta.selected_text == "!1"
+            assert ta.selection.start == (2, 0)
+            assert ta.has_focus
+
+
+        # Test clicking a missing ref
+        with mock.patch.object(ta, patch_path, return_value=(1, 10)):
+            # clicked 'DIBasicType' (No !N there)
+            event = Click(
+                widget=ta, x=0, y=0, delta_x=0, delta_y=0, button=1,
+                shift=False, meta=False, ctrl=False
+            )
+            await app.on_click(event)
+            # Selection should NOT change from the previous jump
+            assert ta.selected_text == "!1"
+
+        # Click on a non-existent ref (if we had one)
+        test_ir_2 = "call void @f(), !dbg !99\n!1 = !DIBasicType(name: \"int\")\n"
+        ir_file_2 = tmp_path / "jump_test_2.ll"
+        ir_file_2.write_text(test_ir_2)
+        manager.parse_file(str(ir_file_2))
+        await app._refresh_source_view()
+        await pilot.pause()
+        line_0 = ta.document.get_line(0)
+        col = line_0.find("!99")
+        with mock.patch.object(ta, patch_path, return_value=(0, col)):
+            event = Click(
+                widget=ta, x=0, y=0, delta_x=0, delta_y=0, button=1,
+                shift=False, meta=False, ctrl=False
+            )
+            await app.on_click(event)
+            assert "No definition found for !99" in _results_text(app)
